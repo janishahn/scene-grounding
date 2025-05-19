@@ -7,6 +7,8 @@ extract_masks: false
 extract_depth: false
 
 # folder where the data is downloaded
-data_root: data
+data_root: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/
 
-splits: [nvs_sem_val]
+# splits: [scene_grounding]
+
+scene_ids: [88cf747085]

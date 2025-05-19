@@ -199,7 +199,7 @@ class ScanNetPPDataset:
 
 
     def get_scene_points(self):
-        data = torch.load(self.point_cloud_path)
+        data = torch.load(self.point_cloud_path, weights_only=False)
         points = np.asarray(data['sampled_coords'])
         return points
 

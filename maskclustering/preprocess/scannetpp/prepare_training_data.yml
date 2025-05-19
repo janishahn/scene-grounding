@@ -1,19 +1,19 @@
 data:
-  data_root: data/data
+  data_root: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/data
 
-  labels_path: data/metadata/semantic_classes.txt
+  labels_path: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_classes.txt
   # for instance segmentation
   use_instances: true
-  instance_labels_path: data/metadata/instance_classes.txt
+  instance_labels_path: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/instance_classes.txt
 
   ## save multiple labels per vertex/point? ##
   # multilabel:
   #   max_gt: 3
   #   multilabel_only: false
 
-  mapping_file: data/metadata/semantic_benchmark/map_benchmark.csv
+  mapping_file: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_benchmark/map_benchmark.csv
 
-  list_path: data/splits/nvs_sem_val.txt
+  list_path: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/splits/scene_grounding.txt
 
   ignore_label: -100
 
@@ -30,4 +30,4 @@ data:
     - sample_points_on_mesh
 
 # dir to save pth training data
-out_dir: data/pcld_0.25
+out_dir: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/pcld_0.25

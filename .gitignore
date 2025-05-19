@@ -75,3 +75,6 @@ Thumbs.db
 
 # Scannet data
 /scannetpp_scenes
+/data_*
+/maskclustering/scannetpp-toolkit
+*.pth

@@ -24,6 +24,7 @@ def extract_text_feature(save_path, descriptions):
         text_features_dict[description] = text_features[i]
 
     np.save(save_path, text_features_dict)
+    print(f'Saved text features to {save_path}')
 
 model = load_clip()
 extract_text_feature('data/text_features/scannet.npy', SCANNET_LABELS)

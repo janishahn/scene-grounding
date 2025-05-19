@@ -24,10 +24,10 @@
 ################################################################################
 
 ###### token ###### enter your personalized token here
-token: Your_token_here
+token: BrTK3wrIyUQpN9KAcKw0jj52TsIAmZagXQ9b0oIKRWGg8cME1bUv5hfz2ZjyPvaC
 ###### download the data here ######
 # specify an absolute path
-data_root: /raid/miyan/scannet++/
+data_root: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp
 
 # root url of the data
 root_url: https://kaldir.vc.in.tum.de/scannetpp/download?token=TOKEN&file=FILEPATH
@@ -35,13 +35,16 @@ root_url: https://kaldir.vc.in.tum.de/scannetpp/download?token=TOKEN&file=FILEPA
 # download the metadata only, change this to true
 metadata_only: false
 
+# dont download files, just check if they exist for download
+dry_run: false
+
 # show output for each file being download and unzipped
 verbose: false
 
 ###### specify the scenes to download ######
 # select the splits to download
 # download_splits: [nvs_sem_train, nvs_sem_val, nvs_test, sem_test]
-download_splits: [nvs_sem_val]
+# download_splits: [nvs_sem_val]
 
 
 # uncomment this and comment above to download data only for specific scenes
@@ -49,6 +52,10 @@ download_splits: [nvs_sem_val]
 # scene lists can be downloaded by setting metadata_only to true
 # an example scene ID is provided below
 # download_scenes: [0d2ee665be]
+
+# picked random scene ID from data/splits/nvs_sem_train.txt by hand
+download_scenes: [88cf747085]
+
 
 ###### specify the assets to download ######
 # by default, these assets are downloaded for each scene:
