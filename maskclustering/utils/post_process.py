@@ -2,6 +2,7 @@ import numpy as np
 import os
 import torch
 from utils.geometry import judge_bbox_overlay
+from utils.best_view import save_best_views
 
 
 def merge_overlapping_objects(total_point_ids_list, total_bbox_list, total_mask_list, overlapping_ratio):
@@ -166,6 +167,19 @@ def export(dataset, total_point_ids_list, total_mask_list, args):
 
     export_class_agnostic_mask(args, class_agnostic_mask_list)
 
+    # Add debug log
+    if getattr(args, "debug", False):
+        print(f"Processing best views for {len(object_dict)} objects")
+        print(f"save_best_views flag: {getattr(args, 'save_best_views', False)}")
+    
+    # Ensure best views are saved
+    if getattr(args, "save_best_views", False):
+        try:
+            object_dict = save_best_views(dataset, object_dict, args)
+        except Exception as e:
+            print(f"ERROR during save_best_views: {str(e)}")
+    
+    # Save object dictionary regardless of best views
     os.makedirs(os.path.join(dataset.object_dict_dir, args.config), exist_ok=True)
     np.save(os.path.join(dataset.object_dict_dir, args.config, 'object_dict.npy'), object_dict, allow_pickle=True)
 

@@ -9,6 +9,9 @@ def update_args(args):
     config_path = f'configs/{args.config}.json'
     with open(config_path, 'r') as f:
         config = json.load(f)
+    # Add debug flag to config if it's set
+    if args.debug:
+        config['debug'] = True
     for key in config:
         setattr(args, key, config[key])
     return args

@@ -4,6 +4,7 @@ import time
 from utils.config import get_args
 
 CUDA_LIST = [0]
+cuda_num = len(CUDA_LIST)  # Define cuda_num based on CUDA_LIST length
 
 def execute_commands(commands_list, command_type, process_num):
     print('====> Start', command_type)
@@ -29,12 +30,11 @@ def get_seq_name_list(dataset):
     return seq_name_list
 
 def parallel_compute(general_command, command_name, resource_type, cuda_list, seq_name_list):
-    cuda_num = len(cuda_list)
-    
+    # Each worker gets assigned different scenes to process
     if resource_type == 'cuda':
         commands = []
         for i, cuda_id in enumerate(cuda_list):
-            process_seq_name = seq_name_list[i::cuda_num]
+            process_seq_name = seq_name_list[i::cuda_num]  # Splits scenes across workers
             if len(process_seq_name) == 0:
                 continue
             process_seq_name = '+'.join(process_seq_name)
@@ -82,13 +82,14 @@ def main(args):
     # parallel_compute(f'python third_party/detectron2/projects/CropFormer/demo_cropformer/mask_predict.py --config-file third_party/detectron2/projects/CropFormer/configs/entityv2/entity_segmentation/mask2former_hornet_3x.yaml --root {root} --image_path_pattern {image_path_pattern} --dataset {args.dataset} --seq_name_list %s --opts MODEL.WEIGHTS {cropformer_path}', 'predict mask', 'cuda', CUDA_LIST, seq_name_list)
 
     # # Step 2: Mask clustering using our proposed method.
-    parallel_compute(f'python main.py --config {config} --seq_name_list %s', 'mask clustering', 'cuda', CUDA_LIST, seq_name_list)
+    debug_flag = '--debug' if args.debug else ''
+    parallel_compute(f'python main.py --config {config} --seq_name_list %s {debug_flag}', 'mask clustering', 'cuda', CUDA_LIST, seq_name_list)
     
     # Step 3: Evaluate the class-agnostic results.
     os.system(f'python -m evaluation.evaluate --pred_path data/prediction/{config}_class_agnostic --gt_path {gt} --dataset {dataset} --no_class')
 
     # Step 4: Get the open-vocabulary semantic features for each 2D masks.
-    parallel_compute(f'python -m semantics.get_open-voc_features --config {config}  --seq_name_list %s', 'get open-vocabulary semantic features using CLIP', 'cuda', CUDA_LIST, seq_name_list)
+    parallel_compute(f'python -m semantics.get_open-voc_features --config {config} --seq_name_list %s {debug_flag}', 'get open-vocabulary semantic features using CLIP', 'cuda', CUDA_LIST, seq_name_list)
 
     # Step 5: Get the text CLIP features for each label.
     get_label_text_feature(CUDA_LIST[0])
