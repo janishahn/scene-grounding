@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 import torch
 
-def compute_bbox_with_padding(mask, padding_ratio=0.1):
+
+def calculate_padded_bounding_box(mask, padding_ratio=0.1):
     """Compute bounding box of mask with padding percentage."""
     y_indices, x_indices = np.where(mask > 0)
     if len(y_indices) == 0 or len(x_indices) == 0:
@@ -43,6 +44,34 @@ def create_best_view_dir(dataset_root: str, debug: bool = False) -> str:
         
     return best_views_dir
 
+def create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb):
+    """
+    Creates a highlighted version of an image by overlaying a semi-transparent color
+    on a specific segmentation mask and adding a border around the masked object.
+    This function helps visualize a particular object in a frame by making it stand
+    out with a colored highlight.
+    """
+    segmentation = dataset.get_segmentation(frame_id)
+    mask = (segmentation == mask_id)
+    
+    # Apply highlight - semi-transparent overlay with border
+    highlight_color = (0, 255, 0)  # Green highlight
+    alpha = 0.4  # Transparency factor
+    
+    # Create color overlay
+    overlay = highlighted_rgb.copy()
+    overlay[mask] = highlight_color
+    
+    # Blend with original image
+    highlighted_rgb = cv2.addWeighted(overlay, alpha, highlighted_rgb, 1 - alpha, 0)
+    
+    # Add border around the mask
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(highlighted_rgb, contours, -1, highlight_color, 2)
+
+    return mask, highlighted_rgb
+
+
 def save_best_views(dataset, object_dict, args):
     """Save best view images and metadata for each object."""
     # Add debug logging
@@ -59,14 +88,15 @@ def save_best_views(dataset, object_dict, args):
     # Process each object
     for obj_id, obj_data in object_dict.items():
         # Skip if no representative masks
-        if 'repre_mask_list' not in obj_data or not obj_data['repre_mask_list']:
+        if 'repre_mask_list' not in obj_data or len(obj_data['repre_mask_list']) == 0:
             if debug:
                 print(f"Object {obj_id} has no representative masks, skipping")
             continue
             
+        # NOTE: We currently rely on MaskClustering to provide us with the most representative view of the object
         # Get best view info from first entry in repre_mask_list
         frame_id, mask_id, coverage = obj_data['repre_mask_list'][0]
-        
+
         try:
             # Get RGB image
             rgb = dataset.get_rgb(frame_id, change_color=False)
@@ -94,26 +124,10 @@ def save_best_views(dataset, object_dict, args):
 
             # Create a copy of the original image for highlighting
             highlighted_rgb = rgb.copy()
-            
-            # Load segmentation to create the highlighted version
+
+            # Load segmentation mask to create the highlighted version
             try:
-                segmentation = dataset.get_segmentation(frame_id)
-                mask = (segmentation == mask_id)
-                
-                # Apply highlight - semi-transparent overlay with border
-                highlight_color = (0, 255, 0)  # Green highlight
-                alpha = 0.4  # Transparency factor
-                
-                # Create color overlay
-                overlay = highlighted_rgb.copy()
-                overlay[mask] = highlight_color
-                
-                # Blend with original image
-                highlighted_rgb = cv2.addWeighted(overlay, alpha, highlighted_rgb, 1 - alpha, 0)
-                
-                # Add border around the mask
-                contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(highlighted_rgb, contours, -1, highlight_color, 2)
+                mask, highlighted_rgb = create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb)
             except Exception as highlight_err:
                 print(f"Warning: Failed to create highlighted image for object {obj_id}: {str(highlight_err)}")
 
@@ -121,12 +135,13 @@ def save_best_views(dataset, object_dict, args):
             if getattr(args, 'crop_best_views', False) or getattr(args, 'best_view_crop', False):
                 try:
                     # Compute bbox
-                    bbox = compute_bbox_with_padding(mask, 
-                                                    padding_ratio=getattr(args, 'best_view_padding', 0.1))
+                    bbox = calculate_padded_bounding_box(mask, padding_ratio=getattr(args, 'best_view_padding', 0.1))
                     if bbox is not None:
                         left, top, right, bottom = bbox
+                        # Crop image to according to bbox
                         rgb = rgb[top:bottom+1, left:right+1]
                         highlighted_rgb = highlighted_rgb[top:bottom+1, left:right+1]
+
                         metadata['bbox'] = bbox
                 except Exception as crop_err:
                     print(f"Warning: Failed to crop object {obj_id}: {str(crop_err)}")
@@ -135,9 +150,12 @@ def save_best_views(dataset, object_dict, args):
             try:
                 cv2.imwrite(out_path, rgb)
                 cv2.imwrite(out_highlighted_path, highlighted_rgb)
+                
+                # Debug information 
                 saved_count += 1
                 if debug and saved_count % 10 == 0:
                     print(f"Saved {saved_count} best view image pairs so far")
+
             except Exception as save_err:
                 print(f"ERROR: Failed to save image for object {obj_id}: {str(save_err)}")
                 continue
@@ -150,22 +168,7 @@ def save_best_views(dataset, object_dict, args):
     
     if debug:
         print(f"====> Completed save_best_views: saved {saved_count} out of {len(object_dict)} objects")
-    
-    # Save enriched object dictionary
-    # To load and work with this file later:
-    # object_dict = torch.load('path/to/best_view_object_dict.pth')
-    # 
-    # The loaded object_dict contains metadata for each object including:
-    # - frame_id: The frame number containing best view
-    # - mask_id: The segmentation mask ID 
-    # - coverage: View coverage score
-    # - image_path: Relative path to the saved image
-    # - bbox: Bounding box coordinates [left,top,right,bottom] if cropping enabled
-    #
-    # Example usage:
-    # best_view = object_dict[obj_id]['best_view']
-    # frame = best_view['frame_id']
-    # mask = best_view['mask_id']
+ 
     obj_dict_path = os.path.join(best_views_dir, 'best_view_object_dict.pth')
     try:
         torch.save(object_dict, obj_dict_path)
