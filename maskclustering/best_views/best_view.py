@@ -30,35 +30,28 @@ def compute_bbox_with_padding(mask, padding_ratio=0.1):
     
     return [left, top, right, bottom]
 
-def save_best_views(dataset, object_dict, args):
-    """Save best view images and metadata for each object."""
-    
-    # Add debug logging
-    debug = getattr(args, "debug", False)
-    if debug:
-        print(f"====> Starting save_best_views for {len(object_dict)} objects")
-    
-    # Scene root should be the main scene directory
-    if hasattr(dataset, 'root'):
-        scene_root = dataset.root
-    else:
-        # Fallback to using dirname of rgb_dir if root not defined
-        scene_root = os.path.dirname(os.path.dirname(dataset.rgb_dir))
-        
-    best_views_dir = os.path.join(scene_root, 'output', 'best_views')
-    
-    # Enhanced directory creation with logging
+def create_best_view_dir(dataset_root: str, debug: bool = False) -> str:
+
+    best_views_dir = os.path.join(dataset_root, 'output', 'best_views')
     try:
         os.makedirs(best_views_dir, exist_ok=True)
         if debug:
             print(f"Created or confirmed best_views_dir at: {best_views_dir}")
     except Exception as e:
-        print(f"ERROR: Failed to create best_views directory at {best_views_dir}: {str(e)}")
-        # Create alternative location if primary fails
-        fallback_dir = os.path.join(os.path.dirname(scene_root), 'best_views')
-        print(f"Attempting to use fallback location: {fallback_dir}")
-        os.makedirs(fallback_dir, exist_ok=True)
-        best_views_dir = fallback_dir
+        print(f"ERROR: Failed to create best views directory at {best_views_dir}: {str(e)}")
+        raise
+        
+    return best_views_dir
+
+def save_best_views(dataset, object_dict, args):
+    """Save best view images and metadata for each object."""
+    # Add debug logging
+    debug = getattr(args, "debug", False)
+    if debug:
+        print(f"====> Starting save_best_views for {len(object_dict)} objects")
+    
+    scene_root = dataset.root
+    best_views_dir = create_best_view_dir(scene_root, debug)
 
     # Track successful saves
     saved_count = 0
