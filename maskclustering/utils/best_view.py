@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-import torch  # Add this import at the top
+import torch
 
 def compute_bbox_with_padding(mask, padding_ratio=0.1):
     """Compute bounding box of mask with padding percentage."""
