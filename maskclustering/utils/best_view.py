@@ -160,8 +160,7 @@ def save_best_views(dataset, object_dict, args):
     
     # Save enriched object dictionary
     # To load and work with this file later:
-    # import torch
-    # object_dict = torch.load('path/to/object_dict.pth')
+    # object_dict = torch.load('path/to/best_view_object_dict.pth')
     # 
     # The loaded object_dict contains metadata for each object including:
     # - frame_id: The frame number containing best view
@@ -174,7 +173,7 @@ def save_best_views(dataset, object_dict, args):
     # best_view = object_dict[obj_id]['best_view']
     # frame = best_view['frame_id']
     # mask = best_view['mask_id']
-    obj_dict_path = os.path.join(best_views_dir, 'object_dict.pth')
+    obj_dict_path = os.path.join(best_views_dir, 'best_view_object_dict.pth')
     try:
         torch.save(object_dict, obj_dict_path)
         if debug:
