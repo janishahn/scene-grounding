@@ -1,0 +1,22 @@
+# Main configuration for the scene grounding pipeline
+
+# General parameters
+general:
+  debug_logging: false
+
+# Mask Clustering Configuration
+mask_clustering:
+  # Configuration name for mask clustering (e.g., scannetpp, demo).
+  # Corresponds to a .json file in maskclustering/configs/ (e.g., scannetpp.json)
+  config_name: "scannetpp"
+  # Steps to run in the mask clustering pipeline. Refer to maskclustering/run.py for detailed step descriptions.
+  # Example: [1, 2] runs 2D mask prediction and then mask clustering.
+  steps_to_run: ["2"]
+  # Enable debug flag for the maskclustering.main.main call.
+  # This provides more verbose logging from the mask clustering process.
+  debug: false
+
+# Pipeline execution control
+# Set these to true or false to enable/disable parts of the pipeline.
+run_mask_clustering_pipeline: true
+run_vlm_captioning_pipeline: true

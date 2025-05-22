@@ -1,182 +1,100 @@
-import argparse
 import sys
-import subprocess
 import logging 
+import yaml 
+import os
+import subprocess
 
-from typing import Optional
-from vlm_caption.infer import process_scene
-from vlm_caption.model_loader import get_image_caption_pipeline
-from vlm_caption.utils import setup_logging
-from maskclustering.main import main
-from maskclustering.utils.config import get_args
+# Updated VLM imports for config-driven approach
+from vlm_caption.infer import run_vlm_captioning
+def setup_main_logging(level: int = logging.INFO) -> None:
+    """
+    Set up logging configuration for the main orchestrator.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
-def parse_args():
+def load_pipeline_config(config_path: str = "pipeline_config.yaml") -> dict:
     """
-    Parse command line arguments.
-    
-    Returns
-    -------
-    argparse.Namespace
-        Parsed command line arguments.
+    Loads the main pipeline YAML configuration file.
     """
-    parser = argparse.ArgumentParser(description="Run scene-grounding pipeline")
-    
-    parser.add_argument(
-        "--mask_cluster", 
-        action="store_true",
-        help="Run mask clustering"
-    )
-    parser.add_argument(
-        "--caption", 
-        action="store_true",
-        help="Run VLM captioning"
-    )
-    parser.add_argument(
-        "--generate_captions", 
-        action="store_true",
-        help="Generate captions using VLM after mask clustering"
-    )
-    parser.add_argument(
-        "--dataset_root", 
-        type=str, 
-        default="./data",
-        help="Root directory of the dataset"
-    )
-    parser.add_argument(
-        "--dataset", 
-        type=str, 
-        required=True,
-        choices=["scannet", "scannetpp", "matterport3d", "demo"],
-        help="Dataset type"
-    )
-    parser.add_argument(
-        "--seq_name", 
-        type=str, 
-        required=True,
-        help="Scene/sequence name"
-    )
-    parser.add_argument(
-        "--config", 
-        type=str, 
-        default=None,
-        help="Configuration name for mask clustering (defaults to dataset name)"
-    )
-    parser.add_argument(
-        "--quantize", 
-        action="store_true",
-        help="Use 8-bit quantization for VLM captioning"
-    )
-    parser.add_argument(
-        "--quantize_captions", 
-        action="store_true",
-        help="Use 8-bit quantization specifically for VLM captioning"
-    )
-    
-    return parser.parse_args()
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
 
-def run_mask_clustering(
-    dataset_type: str,
-    seq_name: str,
-    config: Optional[str] = None,
-) -> None:
+def run_mask_clustering_from_config(cfg: dict) -> None:
     """
-    Run the mask clustering pipeline.
+    Run the mask clustering pipeline using settings from the loaded config via a subprocess.
     
     Parameters
     ----------
-    dataset_type : str
-        Type of dataset (e.g., 'scannet', 'matterport3d', 'scannetpp').
-    seq_name : str
-        Scene/sequence name.
-    config : Optional[str], optional
-        Configuration name. Default is None.
+    cfg : dict
+        The full pipeline configuration dictionary.
     """
+    logging.info("Starting mask clustering pipeline via subprocess...")
     
-    # Use dataset name as default config if not specified
-    if config is None:
-        config = dataset_type
-    
-    # Set up arguments
-    sys_args = [
-        "--config", config,
-        "--seq_name", seq_name,
+    general_cfg = cfg["general"]
+    mc_cfg = cfg["mask_clustering"]
+    # Construct command line arguments for maskclustering/run.py
+    cmd_args = [
+        "--config", mc_cfg["config_name"],
+        # Ensure steps_to_run are passed as multiple arguments if needed by the script
+        # The original maskclustering/run.py takes them as separate strings after --steps_to_run
     ]
-    args = get_args(sys_args)
-    
-    # Run mask clustering
-    main(args)
+    # Add steps_to_run arguments correctly
+    cmd_args.append("--steps_to_run")
+    cmd_args.extend(mc_cfg["steps_to_run"])
 
-def run_vlm_captioning(
-    dataset_root: str,
-    dataset_type: str,
-    seq_name: str,
-    quantize: bool = False,
-) -> None:
-    """
-    Run the VLM captioning pipeline.
-    
-    Parameters
-    ----------
-    dataset_root : str
-        Root directory of the dataset.
-    dataset_type : str
-        Type of dataset (e.g., 'scannet', 'matterport3d', 'scannetpp').
-    seq_name : str
-        Scene/sequence name.
-    quantize : bool, optional
-        Whether to use 8-bit quantization. Default is False.
-    """
-    
-    # Set up logging
-    setup_logging()
-    
-    # Load the VLM model
-    logging.info("Loading VLM model...")
-    pipeline = get_image_caption_pipeline("Salesforce/blip2-opt-2.7b", quantize)
-    logging.info("VLM model loaded.")
-    
-    # Run captioning
-    process_scene(
-        pipeline,
-        dataset_root,
-        dataset_type,
-        seq_name,
-    )
+    if mc_cfg.get("debug", False):
+        cmd_args.append("--debug")
+
+    command = [sys.executable, "run.py"] + cmd_args
+    logging.info(f"Mask clustering command: {' '.join(command)}")
+
+    # Prepare environment for the subprocess
+    subprocess_env = os.environ.copy()
+
+    try:
+        logging.info("Executing mask clustering pipeline...")
+        # Execute maskclustering/run.py with the specificied arguments
+        completed_process = subprocess.run(command, env=subprocess_env, check=True, capture_output=True, text=True, cwd='maskclustering')
+        logging.info("Mask clustering pipeline completed successfully.")
+        logging.info(f"Subprocess STDOUT: {completed_process.stdout} ")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Mask clustering subprocess failed with exit code {e.returncode}")
+        logging.error("Subprocess STDERR:")
+        logging.error(e.stderr)
+        logging.error("Subprocess STDOUT:")
+        logging.error(e.stdout)
+        raise # Re-raise the exception to indicate failure
+    except FileNotFoundError:
+        logging.error(f"Error: The script 'maskclustering/run.py' was not found. Make sure the path is correct.")
+        raise
 
 def main():
-    """Main entry point for the scene-grounding pipeline."""
-    args = parse_args()
+    """Main entry point for the scene-grounding pipeline"""
+    pipeline_cfg = load_pipeline_config(config_path="pipeline_config.yaml")
+
+    main_log_level = logging.DEBUG if pipeline_cfg.get("general", {}).get("debug_logging", False) else logging.INFO
+    setup_main_logging(level=main_log_level)
+
+    if pipeline_cfg.get("run_mask_clustering_pipeline", False):
+        try:
+            run_mask_clustering_from_config(pipeline_cfg)
+        except Exception as e:
+            logging.error(f"Mask clustering pipeline failed: {e}")
+            sys.exit(1) # Exit if mask clustering fails
+
+    if pipeline_cfg.get("run_vlm_captioning_pipeline", False):
+        try:
+            run_vlm_captioning() # defaults to vlm_caption/configs/caption.yaml
+        except Exception as e:
+            logging.error(f"VLM captioning pipeline failed: {e}")
+            sys.exit(1) # Exit if VLM captioning fails
     
-    # Run mask clustering if requested
-    if args.mask_cluster:
-        print("Running mask clustering...")
-        run_mask_clustering(args.dataset, args.seq_name, args.config)
-        print("Mask clustering completed.")
-        
-        # Generate captions after clustering if requested
-        if args.generate_captions:
-            print("Generating captions after mask clustering...")
-            subprocess.run([
-                "python", "-m", "vlm_caption.infer",
-                "--config", args.config or args.dataset,
-                "--dataset-root", args.dataset_root,
-                "--seq-name", args.seq_name,
-                "--model-name", "Salesforce/blip2-opt-2.7b",
-                *(["--quantize"] if args.quantize_captions else [])
-            ], check=True)
-            print("Caption generation completed.")
-    
-    # Run VLM captioning if requested (separate from mask clustering)
-    if args.caption:
-        print("Running VLM captioning...")
-        run_vlm_captioning(args.dataset_root, args.dataset, args.seq_name, args.quantize)
-        print("VLM captioning completed.")
-    
-    # If neither is specified, show help
-    if not (args.mask_cluster or args.caption):
-        print("No action specified. Please use --mask_cluster or --caption.")
-        return 1
-    
+    logging.info("Scene grounding pipeline orchestration finished successfully.")
     return 0
 
 if __name__ == "__main__":

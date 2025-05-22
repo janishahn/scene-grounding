@@ -8,7 +8,7 @@ import torch
 from typing import List, Dict
 from PIL import Image
 from tqdm import tqdm
-from model_handler import ModelHandler
+from vlm_caption.model_handler import ModelHandler
 
 def load_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -176,7 +176,7 @@ def create_vlm_captions(handler: ModelHandler, root: str, seq: str, out_dir: str
     logging.info(f"Saved {len(captions)} object captions => {out_dir}/{seq}.captions.json")
     return True
 
-def run_vlm_captioning(config_file: str = "vlm_caption/caption.yaml"):
+def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
     """
     Run Vision Language Model (VLM) captioning on a set of scenes.
     This function loads configuration, sets up the model, and processes scenes

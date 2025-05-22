@@ -59,6 +59,8 @@ def main(args):
     dataset = args.dataset
     config = args.config
     cropformer_path = args.cropformer_path
+    # NOTE: Added by us for selective execution of the steps
+    steps_to_run = args.steps_to_run
 
     if dataset == 'scannet':
         root = 'data/scannet/processed'
@@ -78,28 +80,34 @@ def main(args):
     print('There are %d scenes' % len(seq_name_list))
     
     # Step 1: use Cropformer to get 2D instance masks for all sequences.
-    # NOTE: Commented it out, since we already have the prediction
-    # parallel_compute(f'python third_party/detectron2/projects/CropFormer/demo_cropformer/mask_predict.py --config-file third_party/detectron2/projects/CropFormer/configs/entityv2/entity_segmentation/mask2former_hornet_3x.yaml --root {root} --image_path_pattern {image_path_pattern} --dataset {args.dataset} --seq_name_list %s --opts MODEL.WEIGHTS {cropformer_path}', 'predict mask', 'cuda', CUDA_LIST, seq_name_list)
+    if "1" in steps_to_run:
+        parallel_compute(f'python third_party/detectron2/projects/CropFormer/demo_cropformer/mask_predict.py --config-file third_party/detectron2/projects/CropFormer/configs/entityv2/entity_segmentation/mask2former_hornet_3x.yaml --root {root} --image_path_pattern {image_path_pattern} --dataset {args.dataset} --seq_name_list %s --opts MODEL.WEIGHTS {cropformer_path}', 'predict mask', 'cuda', CUDA_LIST, seq_name_list)
 
     # # Step 2: Mask clustering using our proposed method.
-    # NOTE: Added for convenience 
-    debug_flag = '--debug' if args.debug else ''
-    parallel_compute(f'python main.py --config {config} --seq_name_list %s {debug_flag}', 'mask clustering', 'cuda', CUDA_LIST, seq_name_list)
-    
+    if "2" in steps_to_run:
+        # NOTE: Added for convenience 
+        debug_flag = '--debug' if args.debug else ''
+        parallel_compute(f'python main.py --config {config} --seq_name_list %s {debug_flag}', 'mask clustering', 'cuda', CUDA_LIST, seq_name_list)
+
     # Step 3: Evaluate the class-agnostic results.
-    os.system(f'python -m evaluation.evaluate --pred_path data/prediction/{config}_class_agnostic --gt_path {gt} --dataset {dataset} --no_class')
+    if "3" in steps_to_run:
+        os.system(f'python -m evaluation.evaluate --pred_path data/prediction/{config}_class_agnostic --gt_path {gt} --dataset {dataset} --no_class')
 
     # Step 4: Get the open-vocabulary semantic features for each 2D masks.
-    parallel_compute(f'python -m semantics.get_open-voc_features --config {config} --seq_name_list %s {debug_flag}', 'get open-vocabulary semantic features using CLIP', 'cuda', CUDA_LIST, seq_name_list)
+    if "4" in steps_to_run:
+        parallel_compute(f'python -m semantics.get_open-voc_features --config {config} --seq_name_list %s {debug_flag}', 'get open-vocabulary semantic features using CLIP', 'cuda', CUDA_LIST, seq_name_list)
 
     # Step 5: Get the text CLIP features for each label.
-    get_label_text_feature(CUDA_LIST[0])
+    if "5" in steps_to_run:
+        get_label_text_feature(CUDA_LIST[0])
     
     # Step 6: Get labels for each 3D instances.
-    parallel_compute(f'python -m semantics.open-voc_query --config {config}', 'get text labels', 'cpu', CUDA_LIST, seq_name_list)
+    if "6" in steps_to_run:
+        parallel_compute(f'python -m semantics.open-voc_query --config {config}', 'get text labels', 'cpu', CUDA_LIST, seq_name_list)
     
     # Step 7: Evaluate the class-aware results.
-    os.system(f'python -m evaluation.evaluate --pred_path data/prediction/{config} --gt_path {gt} --dataset {dataset}')
+    if "7" in steps_to_run:
+        os.system(f'python -m evaluation.evaluate --pred_path data/prediction/{config} --gt_path {gt} --dataset {dataset}')
 
     print('total time', (time.time() - t0)//60, 'min')
     print('Average time', (time.time() - t0) / len(seq_name_list), 'sec')
