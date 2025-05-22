@@ -1,8 +1,14 @@
 import argparse
-import os
 import sys
 import subprocess
-from typing import Optional, List
+import logging 
+
+from typing import Optional
+from vlm_caption.infer import process_scene
+from vlm_caption.model_loader import get_image_caption_pipeline
+from vlm_caption.utils import setup_logging
+from maskclustering.main import main
+from maskclustering.utils.config import get_args
 
 def parse_args():
     """
@@ -85,8 +91,6 @@ def run_mask_clustering(
     config : Optional[str], optional
         Configuration name. Default is None.
     """
-    from maskclustering.main import main
-    from maskclustering.utils.config import get_args
     
     # Use dataset name as default config if not specified
     if config is None:
@@ -122,10 +126,6 @@ def run_vlm_captioning(
     quantize : bool, optional
         Whether to use 8-bit quantization. Default is False.
     """
-    from vlm_caption.infer import process_scene
-    from vlm_caption.model_loader import get_image_caption_pipeline
-    from vlm_caption.utils import setup_logging
-    import logging
     
     # Set up logging
     setup_logging()

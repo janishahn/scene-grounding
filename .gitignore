@@ -79,3 +79,6 @@ Thumbs.db
 /data_*
 /maskclustering/scannetpp-toolkit
 *.pth
+
+# Output files
+vlm_caption/outputs/

@@ -1,0 +1,14 @@
+dataset:
+  type: scannetpp
+  root: maskclustering/data
+  splits_file: maskclustering/splits/scannetpp.txt
+
+model:
+  name: gemma3:4b-it-qat
+  backend: ollama
+  quantize: true
+
+inference:
+  output_dir: vlm_caption/outputs
+  debug: false
+  seq_names: []

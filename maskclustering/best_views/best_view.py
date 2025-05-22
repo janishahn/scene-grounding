@@ -104,60 +104,56 @@ def save_best_views(dataset, object_dict, args):
                 if debug:
                     print(f"Could not load RGB image for object {obj_id}, frame {frame_id}")
                 continue
-                
-            # Generate output filename using standardized format
-            out_filename = f'obj{obj_id:04d}_f{frame_id:04d}_m{mask_id:02d}.jpg'
-            out_path = os.path.join(best_views_dir, out_filename)
             
-            # Generate highlighted version filename
-            out_highlighted_filename = f'obj{obj_id:04d}_f{frame_id:04d}_m{mask_id:02d}_highlighted.jpg'
-            out_highlighted_path = os.path.join(best_views_dir, out_highlighted_filename)
+            # Generate base filename
+            base_filename = f'obj{obj_id:04d}_f{frame_id:04d}_m{mask_id:02d}'
             
-            # Initialize metadata
+            # Define all output paths
+            paths = {
+                'original': os.path.join(best_views_dir, f'{base_filename}.jpg'),
+                'highlighted': os.path.join(best_views_dir, f'{base_filename}_highlighted.jpg'),
+                'cropped': os.path.join(best_views_dir, f'{base_filename}_cropped.jpg'),
+                'cropped_highlighted': os.path.join(best_views_dir, f'{base_filename}_cropped_highlighted.jpg')
+            }
+            
+            # Initialize metadata with relative paths
             metadata = {
                 'frame_id': frame_id,
-                'mask_id': mask_id, 
-                'coverage': coverage,
-                'image_path': os.path.relpath(out_path, scene_root),
-                'highlighted_image_path': os.path.relpath(out_highlighted_path, scene_root)
+                'mask_id': mask_id,
+                'coverage': coverage
             }
+            for key, path in paths.items():
+                metadata[f'{key}_path'] = os.path.relpath(path, scene_root)
 
-            # Create a copy of the original image for highlighting
-            highlighted_rgb = rgb.copy()
-
-            # Load segmentation mask to create the highlighted version
+            # Save original version
+            cv2.imwrite(paths['original'], rgb)
+            
+            # Create and save highlighted version
             try:
-                mask, highlighted_rgb = create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb)
-            except Exception as highlight_err:
-                print(f"Warning: Failed to create highlighted image for object {obj_id}: {str(highlight_err)}")
-
-            # Optional crop if enabled 
-            if getattr(args, 'crop_best_views', False) or getattr(args, 'best_view_crop', False):
-                try:
-                    # Compute bbox
+                mask, highlighted_rgb = create_highlighted_version(dataset, frame_id, mask_id, rgb.copy())
+                cv2.imwrite(paths['highlighted'], highlighted_rgb)
+                
+                # Handle cropped versions if enabled
+                if getattr(args, 'crop_best_views', False) or getattr(args, 'best_view_crop', False):
                     bbox = calculate_padded_bounding_box(mask, padding_ratio=getattr(args, 'best_view_padding', 0.1))
                     if bbox is not None:
                         left, top, right, bottom = bbox
-                        # Crop image to according to bbox
-                        rgb = rgb[top:bottom+1, left:right+1]
-                        highlighted_rgb = highlighted_rgb[top:bottom+1, left:right+1]
-
+                        # Save cropped original
+                        cropped_rgb = rgb[top:bottom+1, left:right+1]
+                        cv2.imwrite(paths['cropped'], cropped_rgb)
+                        
+                        # Save cropped highlighted
+                        cropped_highlighted = highlighted_rgb[top:bottom+1, left:right+1]
+                        cv2.imwrite(paths['cropped_highlighted'], cropped_highlighted)
+                        
                         metadata['bbox'] = bbox
-                except Exception as crop_err:
-                    print(f"Warning: Failed to crop object {obj_id}: {str(crop_err)}")
-            
-            # Save images
-            try:
-                cv2.imwrite(out_path, rgb)
-                cv2.imwrite(out_highlighted_path, highlighted_rgb)
                 
-                # Debug information 
                 saved_count += 1
                 if debug and saved_count % 10 == 0:
-                    print(f"Saved {saved_count} best view image pairs so far")
-
-            except Exception as save_err:
-                print(f"ERROR: Failed to save image for object {obj_id}: {str(save_err)}")
+                    print(f"Saved {saved_count} best view image sets so far")
+                    
+            except Exception as e:
+                print(f"Warning: Failed to process highlights/crops for object {obj_id}: {str(e)}")
                 continue
             
             # Attach metadata to object_dict

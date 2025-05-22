@@ -1,32 +1,122 @@
 {
-  "0": "a bathroom with blue tiles and white pipes",
-  "1": "a pink sticker on the door of a bathroom",
-  "2": "a pink piece of paper on a white wall",
-  "3": "a metal door mounted on a wall with a light",
-  "4": "a door with a pink sticker on it",
-  "5": "a ceiling light is on in a bathroom",
-  "6": "a bathroom with blue tiles and white walls",
-  "7": "a close up of a blue tiled wall with a white pipe",
-  "8": "a bird is flying through the window of a building",
-  "9": "a bathroom with a sink and toilet in a small room",
-  "10": "a bathroom with blue tiles and a toilet",
-  "11": "a white electrical outlet on a blue tile wall",
-  "12": "a bathroom with a sink and toilet in a blue tiled room",
-  "13": "a bathroom door with a pink sticker on it",
-  "14": "a bathroom with a white door and blue tiles",
-  "15": "a white toilet paper dispenser in a bathroom",
-  "16": "a mirror is reflected in the bathroom mirror",
-  "17": "a white toilet paper dispenser is next to a blue tiled wall",
-  "18": "a bathroom sink with a blue tiled wall",
-  "19": "a white toilet paper dispenser is mounted on a blue wall",
-  "20": "a yellow square on a blue tile wall",
-  "21": "a toilet paper roll is hanging from a wall",
-  "22": "a paper towel dispenser is mounted on the wall",
-  "23": "a sign on a building that says \"do not touch\"",
-  "24": "a close up of a faucet with a white handle",
-  "25": "a light is shining on a wall in a bathroom",
-  "26": "a sign on the wall that says no smoking",
-  "27": "a bathroom with a light above the toilet",
-  "28": "a white door with a handle and a white door handle",
-  "29": "a blue and white tiled wall with a white pipe"
+  "0": {
+    "cropped": "The image shows a section of a tiled wall. The lower portion of the wall is covered in dark blue square tiles. Above the tiles is a band of pale yellow paint. A horizontal white line separates the blue tiles from the yellow paint. Two white pipes are vertically mounted on the wall, running from the ceiling down to the tiles. A sliver of a blue tiled wall is visible in the upper right corner. The ceiling is a pale yellow color.",
+    "original": "The image shows a section of a room with a ceiling, wall, and tiled floor. The ceiling is a muted yellow color, slightly textured. Below the ceiling is a vertical band of pale yellow, followed by a dark blue tiled wall. The tiles are square and have a glossy finish. A set of white pipes runs vertically down the center of the blue wall. A small portion of a blue-tiled wall is visible in the right corner, suggesting a continuation of the room."
+  },
+  "1": {
+    "cropped": "A solid white door with a silver doorknob and plate. To the right is a wall covered in blue square tiles. A vertical, chrome towel rack is mounted on the blue wall. A pink square is affixed to the door.",
+    "original": "A white door is centered in the image. A silver door handle is located on the left side of the door. To the right of the door is a blue tiled wall. A silver towel rack is positioned to the right of the door."
+  },
+  "2": {
+    "cropped": "A roughly rectangular patch of vibrant pink dominates the image. The pink area appears to be a textured or slightly crumpled surface, possibly paper or fabric, and has a slightly irregular, organic shape. The background is a muted, light tan or beige.",
+    "original": "A solid gray door is framed by gray tiles with a blue-gray hue. A silver doorknob and a small, rectangular keyhole are visible on the door. A pink square is affixed to the door\u2019s surface."
+  },
+  "3": {
+    "cropped": "A dark gray, rectangular sliding hardware component is mounted horizontally on a beige wall. The hardware is positioned near the top of the frame, with a slight angle and a visible metallic track running along its length. There are small black screw heads visible on the hardware.",
+    "original": "A rectangular, dark gray cabinet or niche is recessed into a wall. Inside the niche is a dark gray sliding door mechanism with a black handle. Above the niche, a wall is covered in blue square tiles. Rising vertically from the wall adjacent to the niche is a white towel radiator with three vertical pipes. The overall impression is a bathroom or utility space."
+  },
+  "4": {
+    "cropped": "A rectangular, gray-toned door frame is centered in the image. The frame has a matte, slightly textured surface.  To the right of the frame is a blue tile wall, and to the left is a gray wall.  A rectangular, light gray device, resembling a small sliding door or panel, is mounted horizontally within the frame, centered.",
+    "original": "A rectangular, dark gray door frame is prominently displayed. Within the frame is a black, rectangular device with a silver handle and visible mounting hardware.  The wall surrounding the door frame is a muted gray, and the wall adjacent to it is covered in dark blue, rectangular tiles. A vertical, white curtain hangs on the right side of the image. The background is a warm, yellow hue."
+  },
+  "5": {
+    "cropped": "A close-up shot of a smooth, beige ceiling. A circular ventilation fan is centered in the image, with a white ring around its edge. The ceiling is slightly angled and a corner of a wall is visible in the lower left.",
+    "original": "A beige ceiling with a white circular exhaust fan centered. A light blue tiled wall extends from the base of the ceiling, with white pipes running along the wall."
+  },
+  "6": {
+    "cropped": "A portion of a room is visible, featuring a dark blue, square-tiled wall with a vertical, white pipe running down the center. The wall is bordered by a yellow ceiling and a bright blue wall, creating a distinct color contrast. A white circular object, likely a light switch or sensor, is mounted on the blue wall. The lighting appears to be artificial, casting subtle shadows on the tiles.",
+    "original": "A beige, slightly textured ceiling transitions into a dark blue tiled wall. Two white PVC pipes run vertically along the beige section of the ceiling. Below the beige section, the wall is covered in blue square tiles, with a white tile trim running horizontally along the bottom. A white round object, possibly a sensor or device, is visible on the blue tile section."
+  },
+  "7": {
+    "cropped": "Three parallel, rectangular light beams cast long, sharply defined shadows across a dark, matte black surface. The beams are a warm, golden-yellow color, indicating a strong light source positioned above and slightly to the right of the frame. The shadows are distinct and appear to be originating from a window or a similarly light-emitting object. The black surface is smooth and reflects minimal light, emphasizing the contrast between the bright light and the dark background.",
+    "original": "A corner of a room is shown with a dark gray ceiling and wall. The wall is covered in blue, square tiles. A light beige rectangular shape, likely a recessed light fixture, is mounted on the wall below the light fixture. Three white, cylindrical pipes run vertically from the ceiling down to the wall, terminating just above the tiles. The light is casting a warm, yellow glow on the scene."
+  },
+  "8": {
+    "cropped": "A close-up of a blue tiled surface. The tiles are arranged in a grid pattern, with light blue lines separating them. A white trim runs along the left edge of the image, and a white object (likely a ball) is visible in the lower right corner. A dark shadow from the top left corner indicates a light source coming from that direction.",
+    "original": "A close-up of a wall section. The lower portion of the wall is covered in dark blue square tiles. Above the tiles is a rectangular band of light yellow paint. A band of light yellow paint extends above the tiles and is bordered by a white molding. Two white pipes run vertically along the wall, positioned above the yellow band. A small section of blue tiles is visible on the right side of the image, framing the view. The ceiling is a matte, pale yellow color."
+  },
+  "9": {
+    "cropped": "A narrow, off-white tiled compartment forms the primary focus. The compartment has a vertical seam dividing it into two sections. A white, cylindrical door handle is positioned on the right side of the image, centered within the seam.  The wall adjacent to the compartment is black and tiled. A white ceramic sink is partially visible on the right side of the image, near the corner. The floor is a light gray tile.",
+    "original": "A small, dimly lit bathroom corner. On the left is a white, closed cabinet door with a silver handle. The cabinet is positioned against a dark blue tiled wall. To the right of the cabinet is a white ceramic sink with a chrome faucet. A gray paper towel dispenser is mounted on the wall to the right of the sink. The floor is also tiled in a similar dark blue as the wall."
+  },
+  "10": {
+    "cropped": "A rectangular room is viewed from a low angle, looking upwards. The walls are covered in dark blue, square tiles. The floor is covered in white, square tiles, arranged in a grid pattern. Light is coming from the upper left, casting a warm, yellow-toned shadow across the floor and tiles. A vertical, grey-colored pipe is visible on the left wall.",
+    "original": "A rectangular section of a tiled room, likely a bathroom. The floor is covered in white, square tiles arranged in a grid pattern. The tiles are slightly worn and have a subtle, uneven sheen. The walls are covered in dark blue, rectangular tiles. A white ceramic sink is positioned in the center of the frame, supported by a chrome drainpipe. A light source casts a distinct shadow across the floor."
+  },
+  "11": {
+    "cropped": "A blurred, rectangular card, likely a playing card, is oriented diagonally. It has a small, dark smudge or mark towards its upper-left corner. The background is a dark, mottled green, with prominent, blurred, diagonal lines intersecting the image.",
+    "original": "A close-up of a small, tiled bathroom. The walls are covered in square, dark teal tiles. A white ceramic sink with a chrome faucet and pipe is mounted on the wall to the left. A small, white electrical outlet is centered on the wall, and another is visible on the right. The floor is similarly tiled in the same teal color. A dark, vertical edge of a wall, likely a door frame, is present on the right side of the image."
+  },
+  "12": {
+    "cropped": "A small, tiled bathroom space is visible. The walls are covered in light blue, square tiles. A white, elongated sink with a white faucet is mounted on the wall. A white, plastic soap dispenser is positioned to the left of the sink.  Two small, rectangular mirrors are mounted on the wall above the sink. A white electrical outlet is visible on the right side of the frame. The space appears to be a utilitarian, minimally decorated restroom.",
+    "original": "The image shows a small, utilitarian bathroom corner. The walls are covered in teal-colored square tiles. A white, oval-shaped wall-mounted sink is centered in the frame, with a chrome faucet attached. Above the sink are two small, rectangular mirrors. To the left of the sink is a white wall-mounted dispenser for paper towels. A small, white electrical outlet is visible on the right wall. The lighting is bright and appears to be fluorescent."
+  },
+  "13": {
+    "cropped": "A rectangular, light gray door is centered in the image. To the left and right of the door are walls covered in blue, square tiles. The door has a silver handle and a small, rectangular light fixture mounted above it.",
+    "original": "A beige door with a dark gray handle and a small, pink square in the center of the frame. The door is framed by gray walls and tiled with dark blue tiles. A small light fixture is mounted above the door."
+  },
+  "14": {
+    "cropped": "A beige wall bisects the image, with a narrow, dark gray trim line running vertically along its left edge. To the right of the trim is a blue tiled wall, composed of square tiles in a dark blue color. A small, dark gray shadow appears near the top-left corner of the image.",
+    "original": "A white cylindrical toilet paper dispenser is positioned against a wall covered in dark blue square tiles. The dispenser has a white plastic lid and a circular opening at the top. A small portion of a light gray floor is visible at the bottom of the frame."
+  },
+  "15": {
+    "cropped": "A white cylindrical toilet paper dispenser is positioned against a wall covered in blue square tiles. The dispenser has a textured white lid and a visible white interior. The wall tiles are a deep teal blue with a prominent grid pattern. A light gray floor is partially visible at the bottom of the image.",
+    "original": "A white toilet paper dispenser is positioned against a dark blue tiled wall. The wall is covered in square, dark blue tiles with slightly visible grout lines. The dispenser is cylindrical with a white lid and a small, white plastic roll of toilet paper visible beneath the lid. A portion of a light grey floor is visible at the bottom of the image."
+  },
+  "16": {
+    "cropped": "The image shows a vertical, dark brown wooden beam or panel against a slightly lighter brown, textured background. The background appears to have a subtle, repeating pattern, possibly vertical lines or grooves. A strong, defined shadow falls across the lower portion of the beam.",
+    "original": "A vertical white wall is bordered on the left by a brown cabinet and on the right by a blue tiled wall. The tiles are square with a light gray grout. The floor is visible beneath the wall, appearing to be dark wood flooring. A pink sticky note is placed on the white wall."
+  },
+  "17": {
+    "cropped": "A white cylindrical toilet paper dispenser is positioned against a blue tiled wall. The dispenser has a slightly textured surface. A white toilet paper roll is visible inside the dispenser. The dispenser has a small logo on the side. The blue tiles are square and arranged in a grid pattern.",
+    "original": "A white, cylindrical toilet paper dispenser is mounted on a blue tiled wall. The wall tiles are arranged in a vertical, rectangular grid pattern. A vertical white line is visible on the left side of the image, separating the wall from the dispenser."
+  },
+  "18": {
+    "cropped": "A small, white ceramic sink with a rounded basin is mounted on a dark teal tiled wall. A chrome faucet with a cylindrical handle is positioned in the center of the sink. To the right of the sink is a white paper towel dispenser. The lighting casts a warm, yellow glow across the scene.",
+    "original": "A small, light-colored, oval-shaped ceramic sink is mounted on a wall. The wall is covered in dark teal square tiles arranged in a grid pattern. A chrome faucet is visible extending from the sink. A white paper towel dispenser is mounted to the right of the sink. The floor is tiled in a light beige color, matching the tile on the floor."
+  },
+  "19": {
+    "cropped": "A tan, slightly rounded dispenser is mounted on a dark teal wall. A rectangular black slot is visible at the bottom of the dispenser.",
+    "original": "A small, tiled bathroom space. The walls are covered in teal-colored square tiles. A white ceramic sink with a chrome faucet is centered in the frame. To the left of the sink is a white, rectangular wall-mounted dispenser. A small, rectangular mirror is mounted above the sink. There are two white electrical outlets on the wall to the right of the dispenser. The lighting is subdued."
+  },
+  "20": {
+    "cropped": "A slightly blurred, rectangular object of a golden-yellow color is prominently displayed against a dark, out-of-focus green background. The object appears to be slightly textured and has a soft, rounded edge.",
+    "original": "A pale blue, tiled wall with square tiles. A white, rectangular paper towel dispenser is mounted on the wall. A small, white electrical outlet is positioned to the right of the dispenser. The wall appears to be illuminated by a bright light source, creating a strong glare."
+  },
+  "21": {
+    "cropped": "A blurred, partial view of a person\u2019s upper body and shoulders. The face is obscured, but a pale, golden-yellow tone dominates the area around the neck and shoulders. Darker, shadowy tones surround the edges, suggesting a dimly lit environment. The texture appears somewhat soft and out of focus.",
+    "original": "A small, tiled bathroom space. The walls are covered in dark teal square tiles. A white ceramic sink with a chrome faucet is mounted on the wall. A white paper towel dispenser is to the left of the sink. The floor is tiled with light-colored square tiles. A small electrical outlet is visible on the right wall."
+  },
+  "22": {
+    "cropped": "A tan, rounded paper towel dispenser is mounted on a teal tiled wall. The dispenser has a small, rectangular indentation for inserting money. A roll of paper towels is dispensed from the bottom of the dispenser. A shadow is cast to the left of the dispenser.",
+    "original": "The image depicts a small, utilitarian bathroom space. The walls are covered in light blue, rectangular tiles arranged in a grid pattern. A white porcelain sink with a chrome faucet is centered in the frame. Above the sink is a small, rectangular mirror. To the left of the sink is a white toilet paper dispenser, and to the right, a white electrical outlet and a small, white wall-mounted light switch. The overall impression is one of a simple, functional space."
+  },
+  "23": {
+    "cropped": "The image shows a close-up of a dark green, textured surface, possibly a wall or a door panel, divided into rectangular tiles.  A white rectangular object, likely a handle or control, is positioned near the bottom of the frame. The tiles are aligned in a grid pattern.",
+    "original": "The image depicts a small, tiled bathroom. The walls, floor, and ceiling are covered in blue, square tiles. A rectangular mirror is mounted on the wall, reflecting a portion of the room. To the left of the mirror is a white, plastic soap dispenser. To the right of the mirror is a white, plastic toilet paper dispenser. A small, white sign with a red no smoking symbol is affixed to the wall near the mirror. Two bright, white light fixtures are mounted on the ceiling, providing illumination. A partial hand is visible near the toilet paper dispenser."
+  },
+  "24": {
+    "cropped": "A wooden floor is visible, with two black shoes resting on it. One shoe is slightly angled, while the other is more upright.  The background is a dark teal color.",
+    "original": "A white, rounded ceramic sink is positioned against a wall covered in dark teal square tiles. A chrome faucet with a cylindrical handle is mounted on the left side of the sink. A metal drain with a chrome ring is visible in the center of the sink basin. A small, dark gray soap dispenser is mounted on the wall to the right of the sink. The floor is covered in the same teal tiles as the wall."
+  },
+  "25": {
+    "cropped": "A bright, rectangular light fixture is mounted on a blue tiled wall. The light is emitting a significant amount of light, creating a bright, white glare. The tiles are a muted, dark blue, and the grout lines are a lighter, off-white. The light fixture appears to be a simple, white plastic or ceramic design, with a slightly rounded edge.",
+    "original": "The image shows a section of a blue tiled bathroom. The tiles are square and arranged in a grid pattern. A white paper towel dispenser is mounted on the wall, along with a small, dark electrical outlet. To the left of the dispenser is a mirror and a small, rectangular sign with a red no smoking symbol on it. Two bright overhead lights illuminate the space."
+  },
+  "26": {
+    "cropped": "A white sign with a red circle and a line through a cigarette. Below the symbol, text is partially visible, reading \u201cPlease do not\u201d. The sign is mounted on a dark blue tiled wall.",
+    "original": "The image shows a portion of a blue tiled bathroom. The walls are covered in square, light blue tiles. A rectangular mirror is mounted on the wall, with a white frame. To the left of the mirror is a sign prohibiting smoking. A white paper towel dispenser is positioned to the right of the mirror. Above the mirror are two round, white light fixtures. A small, gray object (possibly a soap dispenser) is visible on the floor beneath the dispenser. The overall lighting is bright, reflecting off the tiles."
+  },
+  "27": {
+    "cropped": "A warmly lit, golden-yellow ceiling dominates the frame. A vertical seam, likely a wall or a structural element, is visible on the right side of the image, transitioning into a slightly darker, muted yellow. A subtle shadow appears to be cast on the wall, creating a gradient effect from the brighter ceiling to the darker wall.",
+    "original": "A narrow, rectangular section of a room is visible. The ceiling is a muted, warm yellow. Above the ceiling is a painted wall in a slightly lighter shade of yellow. Below the ceiling is a wall covered in blue, square tiles. A white, rectangular light fixture is mounted on the blue wall. A thin horizontal line of blue paint is visible along the edge of the wall where it meets the ceiling."
+  },
+  "28": {
+    "cropped": "A single, light-colored door handle is centered in the frame, positioned vertically. The door itself is a warm, muted beige-gold color. A vertical seam runs down the center of the door. The lighting is directional, creating a strong shadow to the left of the handle and a gradient of light across the door\u2019s surface.",
+    "original": "A white, closed door is on the left side of the image.  It has a gray handle.  To the right of the door is a dark teal-colored tiled wall.  Above the tiles is a mirror.  A small, rectangular sign with a red no smoking symbol is adhered to the wall above the mirror.  A white, oval-shaped sink with a chrome faucet and a soap dispenser are positioned on the tiled wall."
+  },
+  "29": {
+    "cropped": "The image presents a vertical composition dominated by a series of light-colored, cylindrical objects \u2013 likely showerheads \u2013 sharply silhouetted against a dark teal or deep green wall. The wall is covered in rectangular, dark-colored tiles with subtle, thin horizontal lines that mimic grout. The showerheads cast elongated, distorted shadows, creating a dynamic and somewhat abstract pattern. The light source is positioned to the left, causing the shadows to extend dramatically across the frame. The overall effect is a strong contrast between the cool, dark background and the bright, geometric shadows.",
+    "original": "A gray, recessed shelf unit is mounted on a light tan wall. Below the shelf is a dark gray, rectangular opening, likely part of a toilet enclosure.  A vertical, white towel rack extends upwards from the wall, next to the opening. The wall adjacent to the opening is covered in dark blue, rectangular tiles. The ceiling is a flat, light tan color."
+  }
 }
