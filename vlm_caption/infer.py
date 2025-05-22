@@ -135,7 +135,7 @@ def generate_captions_for_object(
             img = Image.open(img_path).convert("RGB")
             text = handler.caption_image(img)
             obj_dict[object_id]["best_view"][f"{img_type}_caption"] = text
-            obj_captions[img_type] = text
+            obj_captions[img_type] = {"text": text, "img_path": img_path}
         except Exception as e:
             logging.warning(f"Failed to process {img_type} image {img_path} for object {object_id}: {e}")
         finally:
@@ -164,7 +164,7 @@ def create_vlm_captions(handler: ModelHandler, root: str, seq: str, out_dir: str
         generated_obj_captions = generate_captions_for_object(
             handler, object_id, img_paths, obj_dict, bar
         )
-        captions[object_id] = generated_obj_captions
+        captions[object_id] = {"captions": generated_obj_captions}
 
     bar.close()
 

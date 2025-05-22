@@ -35,7 +35,6 @@ def run_mask_clustering_from_config(cfg: dict) -> None:
     """
     logging.info("Starting mask clustering pipeline via subprocess...")
     
-    general_cfg = cfg["general"]
     mc_cfg = cfg["mask_clustering"]
     # Construct command line arguments for maskclustering/run.py
     cmd_args = [
