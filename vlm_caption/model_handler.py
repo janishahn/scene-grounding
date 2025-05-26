@@ -6,7 +6,7 @@ from PIL import Image
 import torch
 import ollama
 
-class ModelHandler:
+class VLMHandler:
     """
     Unified interface for image captioning backends.
     Supported backends: 'transformers', 'ollama'.
