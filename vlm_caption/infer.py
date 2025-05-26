@@ -8,7 +8,7 @@ import torch
 from typing import List, Dict
 from PIL import Image
 from tqdm import tqdm
-from vlm_caption.model_handler import VLMHandler
+from vlm_caption.vlm_handler import VLMHandler
 
 def load_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -207,18 +207,21 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
         quantize=model_cfg.get("quantize", False)
     )
 
+    out_dir = inference_cfg.get("output_dir", "outputs")
     success = 0 
     for seq in scenes:
         ok = create_vlm_captions(
             handler,
             root=dataset_cfg["root"],
             seq=seq,
-            out_dir=inference_cfg.get("output_dir", "outputs")
+            out_dir=out_dir
         )
         if ok:
             success += 1
 
     logging.info(f"Done: {success} succeeded, {len(scenes) - success} failed")
+
+    return os.path.join(out_dir, f"{seq}.captions.json")
 
 if __name__ == "__main__":
     run_vlm_captioning()

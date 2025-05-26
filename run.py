@@ -6,6 +6,8 @@ import subprocess
 
 # Updated VLM imports for config-driven approach
 from vlm_caption.infer import run_vlm_captioning
+from llm_query.query import query_scene
+
 def setup_main_logging(level: int = logging.INFO) -> None:
     """
     Set up logging configuration for the main orchestrator.
@@ -95,9 +97,11 @@ def main():
 
     if pipeline_cfg.get("run_llm_query_pipeline", False):
         try:
-            pass
-        except:
-            logging.error("LLM query pipeline is not implemented yet.")
+            with open('vlm_caption/configs/caption.yaml', 'r') as f:
+                vlm_config = yaml.safe_load(f)
+            query_scene(captions_path="vlm_caption/outputs/88cf747085.captions.json")
+        except Exception as e:
+            logging.error("LLM querying has thrown the following error: {e} ")
             sys.exit(1)
 
     logging.info("Scene grounding pipeline orchestration finished successfully.")
