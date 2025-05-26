@@ -97,11 +97,10 @@ def main():
 
     if pipeline_cfg.get("run_llm_query_pipeline", False):
         try:
-            with open('vlm_caption/configs/caption.yaml', 'r') as f:
-                vlm_config = yaml.safe_load(f)
-            query_scene(captions_path="vlm_caption/outputs/88cf747085.captions.json")
+            img_path = query_scene(captions_path="vlm_caption/outputs/88cf747085.captions.json")
+            logging.info(f"LLM query pipeline completed successfully. Highlighted image path: {img_path}")
         except Exception as e:
-            logging.error("LLM querying has thrown the following error: {e} ")
+            logging.error(f"LLM querying has thrown the following error: {e}")
             sys.exit(1)
 
     logging.info("Scene grounding pipeline orchestration finished successfully.")

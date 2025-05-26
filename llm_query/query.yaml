@@ -1,1 +1,2 @@
 model: gemma3:4b-it-qat
+obj_dict_path: maskclustering/data/scannetpp/data/88cf747085/output/best_views/best_view_object_dict.pth
