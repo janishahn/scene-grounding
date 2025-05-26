@@ -8,7 +8,7 @@ import torch
 from typing import List, Dict
 from PIL import Image
 from tqdm import tqdm
-from vlm_caption.model_handler import ModelHandler
+from vlm_caption.model_handler import VLMHandler
 
 def load_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -115,7 +115,7 @@ def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[
     return to_caption
 
 def generate_captions_for_object(
-    handler: ModelHandler, 
+    handler: VLMHandler, 
     object_id: int, 
     img_paths: Dict[str, str], 
     obj_dict: Dict,
@@ -142,7 +142,7 @@ def generate_captions_for_object(
             progress_bar.update(1)
     return obj_captions
 
-def create_vlm_captions(handler: ModelHandler, root: str, seq: str, out_dir: str) -> bool:
+def create_vlm_captions(handler: VLMHandler, root: str, seq: str, out_dir: str) -> bool:
     logging.info(f"====> Processing scene {seq}")
 
     # Load object dict
@@ -201,7 +201,7 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
     else:
         scenes = read_splits(dataset_cfg["splits_file"])
 
-    handler = ModelHandler(
+    handler = VLMHandler(
         model_name=model_cfg["name"],
         backend=model_cfg.get("backend", "transformers"),
         quantize=model_cfg.get("quantize", False)

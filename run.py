@@ -92,7 +92,14 @@ def main():
         except Exception as e:
             logging.error(f"VLM captioning pipeline failed: {e}")
             sys.exit(1) # Exit if VLM captioning fails
-    
+
+    if pipeline_cfg.get("run_llm_query_pipeline", False):
+        try:
+            pass
+        except:
+            logging.error("LLM query pipeline is not implemented yet.")
+            sys.exit(1)
+
     logging.info("Scene grounding pipeline orchestration finished successfully.")
     return 0
 

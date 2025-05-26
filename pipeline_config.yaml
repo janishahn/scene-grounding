@@ -20,3 +20,4 @@ mask_clustering:
 # Set these to true or false to enable/disable parts of the pipeline.
 run_mask_clustering_pipeline: false
 run_vlm_captioning_pipeline: true
+run_llm_query_pipeline: true
