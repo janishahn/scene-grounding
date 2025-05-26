@@ -4,9 +4,10 @@ import yaml
 import os
 import subprocess
 
-# Updated VLM imports for config-driven approach
+from PIL import Image
 from vlm_caption.infer import run_vlm_captioning
 from llm_query.query import query_scene
+
 
 def setup_main_logging(level: int = logging.INFO) -> None:
     """
@@ -98,7 +99,10 @@ def main():
     if pipeline_cfg.get("run_llm_query_pipeline", False):
         try:
             img_path = query_scene(captions_path="vlm_caption/outputs/88cf747085.captions.json")
-            logging.info(f"LLM query pipeline completed successfully. Highlighted image path: {img_path}")
+            logging.info(f"LLM query pipeline completed successfully")
+            # Open the image in a seperate tab in vscodes
+            abs_img_path = "/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/data/88cf747085/" + img_path
+            logging.info("The image highlighting the queried object can be found at: " + abs_img_path)
         except Exception as e:
             logging.error(f"LLM querying has thrown the following error: {e}")
             sys.exit(1)

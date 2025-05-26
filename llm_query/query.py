@@ -59,6 +59,7 @@ def query_scene(captions_path: str):
         obj_dict = load(obj_dict_path, weights_only=False)
         # Extract img_path for the highlighted picture
         img_path = obj_dict[int(object_id)]['best_view']['highlighted_path']
+    else:
         logging.error("No object_id found in the LLM response.")
         return None
     
@@ -74,11 +75,15 @@ def build_system_prompt(captions: dict) -> str:
 
     You must analyze the user's query, compare it against ALL object descriptions, and return ONLY the object ID and reasoning.
 
-    CRITICAL: Your response must be EXACTLY in this format (no additional text, explanations, or formatting):
-   
+    RESPONSE FORMAT REQUIREMENTS:
+    1. You MUST return a valid JSON object with EXACTLY these two keys: "object_id" and "reasoning"
+    2. The "object_id" MUST be a string containing a number (in quotes)
+    3. The "reasoning" MUST be a string explaining your selection
+
+    Example of CORRECT response format:
     {
-    "object_id": "X",
-    "reasoning": "Brief explanation of why this object matches the query"
+    "object_id": "5",
+    "reasoning": "This object is a bathroom sink with faucet, which matches the query for a place to wash hands."
     }
 
     Available objects:
