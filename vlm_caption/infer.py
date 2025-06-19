@@ -9,6 +9,7 @@ from typing import List, Dict
 from PIL import Image
 from tqdm import tqdm
 from vlm_caption.vlm_handler import VLMHandler
+from vlm_caption.embedding import build_faiss_index
 
 def load_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -80,37 +81,48 @@ def save_captions(captions: Dict[int, str], out_dir: str, seq: str):
 
 def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[tuple[int, Dict[str, str]]]:
     """
-    Collects absolute image paths for objects that have both highlighted and original best views.
+    Collects absolute image paths for objects that have both (cropped) highlighted and original best views.
 
-    Args:
-        obj_dict: The object dictionary loaded from the .pth file.
-        root: The root directory of the dataset.
-        seq: The sequence name (scene identifier).
+    Preference order:
+        highlighted -> cropped_highlighted_path > highlighted_path
+        original    -> cropped_path > original_path
 
-    Returns:
-        A list of tuples, where each tuple contains an object_id and a dictionary
-        mapping image_type ('highlighted', 'original') to its absolute path.
-        Returns an empty list if no objects qualify.
+    This allows us to feed the VLM tight crops that minimise the impact of the green contour.
     """
     to_caption = []
-    # Iterate over all objects and extract the paths of the best view images
     for object_id, data in obj_dict.items():
         best_view = data.get("best_view", {})
         if not best_view:
             continue
-            
-        paths = {}
-        for img_type in ["highlighted", "original"]:
-            rel_path = best_view.get(f"{img_type}_path")            
-            abs_path = os.path.join(root, "scannetpp", "data", seq, rel_path)
-            if os.path.exists(abs_path):
-                paths[img_type] = abs_path
-            else:
-                logging.warning(f"Image not found for object {object_id} ({img_type}): {abs_path}")
-                break # Break from inner loop, this object won't have both paths
-        
-        if len(paths) == 2:
+
+        # Define preferred keys for each caption type
+        preferred: Dict[str, List[str]] = {
+            "highlighted": ["cropped_highlighted_path", "highlighted_path"],
+            "original": ["cropped_path", "original_path"],
+        }
+
+        paths: Dict[str, str] = {}
+        missing = False
+        for img_type, candidates in preferred.items():
+            found = False
+            for key in candidates:
+                rel_path = best_view.get(key)
+                if rel_path:
+                    abs_path = os.path.join(root, "scannetpp", "data", seq, rel_path)
+                    if os.path.exists(abs_path):
+                        paths[img_type] = abs_path
+                        found = True
+                        break
+            if not found:
+                logging.warning(
+                    f"No valid image found for object {object_id} (type={img_type}). Tried: {candidates}"
+                )
+                missing = True
+                break  # skip this object entirely
+
+        if not missing and len(paths) == 2:
             to_caption.append((object_id, paths))
+
     return to_caption
 
 def generate_captions_for_object(
@@ -176,8 +188,21 @@ def create_vlm_captions(handler: VLMHandler, root: str, seq: str, out_dir: str) 
         logging.error("Failed to save updated object dict")
         return False
 
+    # Save captions JSON
     save_captions(captions, out_dir, seq)
-    logging.info(f"Saved {len(captions)} object captions => {out_dir}/{seq}.captions.json")
+    captions_path = os.path.join(out_dir, f"{seq}.captions.json")
+    logging.info(f"Saved {len(captions)} object captions => {captions_path}")
+
+    # Build Faiss index for fast retrieval
+    try:
+        build_faiss_index(
+            captions_path=captions_path,
+            out_dir=out_dir,
+        )
+        logging.info("FAISS index built successfully")
+    except Exception as e:
+        logging.warning(f"Failed to build FAISS index: {e}")
+
     return True
 
 def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):

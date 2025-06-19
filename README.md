@@ -13,7 +13,8 @@ The core 3D instance segmentation and mask clustering is provided by the [MaskCl
 1. **3D Instance Segmentation**: MaskClustering merges 2D instance masks from RGB-D scans into 3D object instances using multi-view verification.
 2. **Best-View Selection**: For each 3D object, the most informative 2D view is selected and highlighted.
 3. **Vision-Language Captioning**: VLMs generate detailed captions for both the highlighted object view and the original scene context.
-4. **LLM Querying**: Users can query the scene in natural language; an LLM matches the query to the most relevant object using the generated captions.
+4. **Vector Retrieval**: Caption embeddings are pre-computed with the lightweight *BGE-base-en-v1.5* model and stored in a FAISS index. At query time the user query is embedded, the top-*k* (default 10) candidate objects are fetched, and **only those captions** are sent to the LLM.
+5. **LLM Querying**: The LLM reasons over the caption subset and finds appropriate matches.
 
 ## Installation
 1. Install [PyTorch](https://pytorch.org/) and [Pytorch3D](https://github.com/facebookresearch/pytorch3d) (see `maskclustering/README.md` for details).
@@ -61,7 +62,7 @@ LLM: {
 ## Configuration
 - `pipeline_config.yaml`: Controls which pipeline stages to run.
 - `vlm_caption/configs/caption.yaml`: VLM model and dataset settings.
-- `llm_query/query.yaml`: LLM model and object dictionary path.
+- `llm_query/query.yaml`: LLM model, object dictionary path, and retrieval settings (`embedder`, `faiss_index_dir`, `top_k`).
 
 ## Acknowledgements
 - [MaskClustering](https://github.com/pku-epic/MaskClustering) for the 3D instance segmentation pipeline.

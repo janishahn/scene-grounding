@@ -1,0 +1,2 @@
+sentence-transformers>=2.6
+faiss-cpu>=1.7.4 

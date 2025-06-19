@@ -4,7 +4,7 @@ dataset:
   splits_file: maskclustering/splits/scannetpp.txt
 
 model:
-  name: gemma3:4b-it-qat
+  name: qwen2.5vl:7b
   backend: ollama
   quantize: true
 

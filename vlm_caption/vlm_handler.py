@@ -113,13 +113,18 @@ class VLMHandler:
         if self.backend == "ollama":
             buf = io.BytesIO()
             image.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode()
+            img_bytes = buf.getvalue()
 
             if not prompt:
                 logging.warning("No captioning prompt passed, using default prompt.")
                 prompt = "Describe this image in detail. **DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION**"
 
-            resp = ollama.generate(model=self.model_name, prompt=prompt, images=[b64], options={"max_tokens": 250, "temperature": 0.8})
+            resp = ollama.generate(
+                model=self.model_name,
+                prompt=prompt,
+                images=[img_bytes],
+                options={"max_tokens": 1024, "temperature": 0.8}
+            )
             
             if isinstance(resp, dict):
                 if "message" in resp and "content" in resp["message"]:

@@ -1,4 +1,4 @@
-Focus exclusively on the object in the image that is highlighted with a bright green outline. Provide a detailed, layered description of this outlined object, addressing the following aspects in sequence:
+The image you see is a tight crop that contains only the target object and a minimal amount of surrounding context.  Describe this single object exhaustively, addressing the aspects below **in the given order**:
 
 1. **Function and Purpose**
 
@@ -19,13 +19,13 @@ Focus exclusively on the object in the image that is highlighted with a bright g
 
 4. **Surface Texture and Material**
 
-   * Describe the tactile quality of the object’s surface (e.g., smooth, grainy, perforated).
+   * Describe the tactile quality of the object's surface (e.g., smooth, grainy, perforated).
    * Identify the material(s) it appears to be made from (e.g., metal, plastic, wood, fabric).
    * If multiple materials are visible, describe their distribution and transition points.
 
 5. **Color and Patterns**
 
-   * Describe the object’s dominant color(s) and any gradients, patterns, markings, or branding.
+   * Describe the object's dominant color(s) and any gradients, patterns, markings, or branding.
    * Include subtleties in hue, saturation, and contrast if present.
 
 6. **Lighting and Visual Effects**
@@ -35,9 +35,9 @@ Focus exclusively on the object in the image that is highlighted with a bright g
 
 7. **Condition and Detail**
 
-   * Comment on the object’s condition (e.g., pristine, worn, damaged, dirty).
+   * Comment on the object's condition (e.g., pristine, worn, damaged, dirty).
    * Include any fine details, such as scratches, seams, buttons, labels, or other distinguishing features.
 
-Avoid discussing other objects except as necessary for spatial context. The focus should remain entirely on the green-highlighted object, offering a rich, multi-dimensional description that captures both physical and contextual characteristics.
+Avoid mentioning any detection marks, cropping artefacts, or unrelated background elements.  Concentrate exclusively on the cropped object, delivering a rich, multi-dimensional description that captures both physical and contextual characteristics.
 
 **DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION.**
