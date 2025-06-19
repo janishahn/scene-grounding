@@ -63,7 +63,8 @@ def run_mask_clustering_from_config(cfg: dict) -> None:
         # Execute maskclustering/run.py with the specificied arguments
         completed_process = subprocess.run(command, env=subprocess_env, check=True, capture_output=True, text=True, cwd='maskclustering')
         logging.info("Mask clustering pipeline completed successfully.")
-        logging.info(f"Subprocess STDOUT: {completed_process.stdout} ")
+        logging.info(f"Subprocess STDOUT: {completed_process.stdout}")
+        logging.error(f"Subprocess STDERR: {completed_process.stderr}")
     except subprocess.CalledProcessError as e:
         logging.error(f"Mask clustering subprocess failed with exit code {e.returncode}")
         logging.error("Subprocess STDERR:")

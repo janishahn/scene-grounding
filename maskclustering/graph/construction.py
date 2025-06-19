@@ -30,16 +30,16 @@ def build_point_in_mask_matrix(args, scene_points, frame_list, dataset):
             point_frame_matrix: a matrix of size (scene_points_num, frame_num). For point i and frame j, if point i is visible in frame j, then M[i,j] = True. Otherwise, M[i,j] = False.
             global_frame_mask_list: a list of masks in the whole sequence. Each tuple contains the frame id and the mask id in this frame.
     '''
-    
     scene_points_num = len(scene_points)
     frame_num = len(frame_list)
-
     scene_points = torch.tensor(scene_points).float().cuda()
+    
     boundary_points = set()
     point_in_mask_matrix = np.zeros((scene_points_num, frame_num), dtype=np.uint16)
     point_frame_matrix = np.zeros((scene_points_num, frame_num), dtype=bool)
     global_frame_mask_list = []
     mask_point_clouds = {}
+    
     
     iterator = tqdm(enumerate(frame_list), total=len(frame_list)) if args.debug else enumerate(frame_list)
     for frame_cnt, frame_id in iterator:
@@ -57,7 +57,6 @@ def build_point_in_mask_matrix(args, scene_points, frame_list, dataset):
             global_frame_mask_list.append((frame_id, mask_id))
         point_in_mask_matrix[list(frame_boundary_point_index), frame_cnt] = 0
         boundary_points.update(frame_boundary_point_index)
-    
     return boundary_points, point_in_mask_matrix, mask_point_clouds, point_frame_matrix, global_frame_mask_list
 
 def init_nodes(global_frame_mask_list, mask_project_on_all_frames, contained_masks, undersegment_mask_ids, mask_point_clouds):

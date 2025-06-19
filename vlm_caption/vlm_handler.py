@@ -1,10 +1,14 @@
 import io
 import base64
 import logging
-from typing import List, Union
+import os
+import time
+from typing import List, Union, Dict, Any
 from PIL import Image
 import torch
 import ollama
+import requests
+from dotenv import load_dotenv
 
 class VLMHandler:
     """
@@ -70,10 +74,39 @@ class VLMHandler:
         elif self.backend == "ollama":
             logging.getLogger("ollama").setLevel(logging.WARNING)
             logging.getLogger("httpx").setLevel(logging.WARNING)
+        elif self.backend == "openrouter":
+            logging.getLogger("httpx").setLevel(logging.WARNING)
         else:
             raise ValueError(f"Unsupported backend: {backend}")
 
-    def caption_image(self, image: Image.Image) -> str:
+    def _get_openrouter_headers(self) -> Dict[str, str]:
+        load_dotenv()
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not found in .env file")
+        
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def _prepare_openrouter_request_body(self, prompt: str, image_b64: str) -> Dict[str, Any]:
+        return {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user", 
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}
+                    ]
+                }
+            ],
+            "temperature": 0.8,
+            "max_tokens": 1024
+        }
+
+    def caption_image(self, image: Image.Image, prompt: str = None) -> str:
         """
         Generate a caption for a single image, returning a string.
         """
@@ -81,7 +114,11 @@ class VLMHandler:
             buf = io.BytesIO()
             image.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode()
-            prompt = f"Describe this image in detail. **DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION**"
+
+            if not prompt:
+                logging.warning("No captioning prompt passed, using default prompt.")
+                prompt = "Describe this image in detail. **DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION**"
+
             resp = ollama.generate(model=self.model_name, prompt=prompt, images=[b64], options={"max_tokens": 250, "temperature": 0.8})
             
             if isinstance(resp, dict):
@@ -112,6 +149,48 @@ class VLMHandler:
                 return raw[0].strip()
             else:
                 return str(raw).strip()
+            
+        elif self.backend == "openrouter":
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode()
+
+            if not prompt:
+                logging.warning("No captioning prompt passed, using default prompt.")
+                prompt = "Describe this image in detail. **DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION**"
+
+            headers = self._get_openrouter_headers()
+            body = self._prepare_openrouter_request_body(prompt, b64)
+            
+            for attempt in range(3):
+                try:
+                    response = requests.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers=headers,
+                        json=body,
+                        timeout=30
+                    )
+                    
+                    if response.status_code == 500 and attempt < 2:
+                        logging.warning(f"Server error 500, retrying in 3 seconds (attempt {attempt + 1}/3)")
+                        time.sleep(3)
+                        continue
+                    
+                    response.raise_for_status()
+                    response_json = response.json()
+                    
+                    if "choices" in response_json and response_json["choices"]:
+                        return response_json["choices"][0]["message"]["content"].strip()
+                    else:
+                        return "Error: No content in response"
+                        
+                except requests.exceptions.RequestException as e:
+                    if attempt < 2:
+                        logging.warning(f"Request failed, retrying in 3 seconds (attempt {attempt + 1}/3): {e}")
+                        time.sleep(3)
+                        continue
+                    logging.error(f"OpenRouter API request failed after 3 attempts: {e}")
+                    return "Error: API request failed"
 
     def caption_batch(self, images: List[Image.Image]) -> List[str]:
         """

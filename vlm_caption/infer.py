@@ -46,10 +46,9 @@ def load_object_dict(path: str) -> dict:
         'coverage': float, coverage score of this best view mask.
         'original_path': str, relative path to the original best view image.
         'highlighted_path': str, relative path to the highlighted original best view image.
-        'cropped_path': str, relative path to the cropped best view image.
         'cropped_highlighted_path': str, relative path to the highlighted cropped best view image.
         'bbox': List, bounding box coordinates.
-        'cropped_caption': str, (added by VLM captioning script) caption for the cropped image.
+        'highlighted_caption': str, (added by VLM captioning script) caption for the highlighted image.
         'original_caption': str, (added by VLM captioning script) caption for the original image.
         Other fields related to the best view selection from the maskclustering process
         might also be present.
@@ -81,7 +80,7 @@ def save_captions(captions: Dict[int, str], out_dir: str, seq: str):
 
 def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[tuple[int, Dict[str, str]]]:
     """
-    Collects absolute image paths for objects that have both cropped and original best views.
+    Collects absolute image paths for objects that have both highlighted and original best views.
 
     Args:
         obj_dict: The object dictionary loaded from the .pth file.
@@ -90,7 +89,7 @@ def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[
 
     Returns:
         A list of tuples, where each tuple contains an object_id and a dictionary
-        mapping image_type ('cropped', 'original') to its absolute path.
+        mapping image_type ('highlighted', 'original') to its absolute path.
         Returns an empty list if no objects qualify.
     """
     to_caption = []
@@ -101,7 +100,7 @@ def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[
             continue
             
         paths = {}
-        for img_type in ["cropped", "original"]:
+        for img_type in ["highlighted", "original"]:
             rel_path = best_view.get(f"{img_type}_path")            
             abs_path = os.path.join(root, "scannetpp", "data", seq, rel_path)
             if os.path.exists(abs_path):
@@ -110,7 +109,7 @@ def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[
                 logging.warning(f"Image not found for object {object_id} ({img_type}): {abs_path}")
                 break # Break from inner loop, this object won't have both paths
         
-        if len(paths) == 2: # Ensure both 'cropped' and 'original' paths were found and exist
+        if len(paths) == 2:
             to_caption.append((object_id, paths))
     return to_caption
 
@@ -122,18 +121,23 @@ def generate_captions_for_object(
     progress_bar: tqdm
 ) -> Dict[str, str]:
     """
-    Generates captions for the cropped and original images of a single object.
+    Generates captions for the highlighted and original images of a single object.
 
     Returns:
         A dictionary containing the generated captions for the object,
         mapping image type to caption text.
     """
-    obj_captions: Dict[str, str] = {"cropped": "", "original": ""}
+    obj_captions: Dict[str, str] = {"highlighted": "", "original": ""}
     for img_type, img_path in img_paths.items():
         try:
-            # Create caption for image anbd save it
+            # Create caption for image and save it
             img = Image.open(img_path).convert("RGB")
-            text = handler.caption_image(img)
+
+            prompt_file = "vlm_caption/object_captioning_prompt.md" if img_type == "highlighted" else "vlm_caption/general_captioning_prompt.md"
+            with open(prompt_file, "r") as f:
+                prompt = f.read().strip()
+
+            text = handler.caption_image(img, prompt=prompt)
             obj_dict[object_id]["best_view"][f"{img_type}_caption"] = text
             obj_captions[img_type] = {"text": text, "img_path": img_path}
         except Exception as e:
@@ -144,6 +148,7 @@ def generate_captions_for_object(
 
 def create_vlm_captions(handler: VLMHandler, root: str, seq: str, out_dir: str) -> bool:
     logging.info(f"====> Processing scene {seq}")
+    logging.info(f"VLM captioning backend: {handler.backend}, model: {handler.model_name}")
 
     # Load object dict
     dict_path = os.path.join(root, "scannetpp/data", seq, "output/best_views/best_view_object_dict.pth")
@@ -155,7 +160,6 @@ def create_vlm_captions(handler: VLMHandler, root: str, seq: str, out_dir: str) 
     if len(to_caption) == 0:
         logging.info("Nothing to caption")
         return True
-
     
     captions: Dict[int, Dict[str, str]] = {}
     bar = tqdm(total=len(to_caption) * 2, desc=f"Captioning {seq}", unit="img")

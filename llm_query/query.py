@@ -33,7 +33,10 @@ def query_scene(captions_path: str):
     # Reduce captions to only the cropped version
     lean_captions = {}
     for id, val in captions.items():
-        lean_captions[id] = val['captions']['cropped']['text']
+        lean_captions[id] = val['captions']['highlighted']['text']
+
+    # Print size of captions dictionary in bytes
+    print(f"Captions dictionary size: {len(json.dumps(lean_captions))}")
 
     # Get user input and build prompt
     query = input("Please enter your query here: ")

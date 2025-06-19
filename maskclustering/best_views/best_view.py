@@ -44,7 +44,7 @@ def create_best_view_dir(dataset_root: str, debug: bool = False) -> str:
         
     return best_views_dir
 
-def create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb):
+def create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb, padding_gap: int = 6):
     """
     Creates a highlighted version of an image by overlaying a semi-transparent color
     on a specific segmentation mask and adding a border around the masked object.
@@ -53,23 +53,29 @@ def create_highlighted_version(dataset, frame_id, mask_id, highlighted_rgb):
     """
     segmentation = dataset.get_segmentation(frame_id)
     mask = (segmentation == mask_id)
-    
-    # Apply highlight - semi-transparent overlay with border
-    highlight_color = (0, 255, 0)  # Green highlight
-    alpha = 0.4  # Transparency factor
-    
-    # Create color overlay
-    overlay = highlighted_rgb.copy()
-    overlay[mask] = highlight_color
-    
-    # Blend with original image
-    highlighted_rgb = cv2.addWeighted(overlay, alpha, highlighted_rgb, 1 - alpha, 0)
-    
-    # Add border around the mask
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(highlighted_rgb, contours, -1, highlight_color, 2)
 
-    return mask, highlighted_rgb
+    # Apply morphological closing to bridge small gaps in the mask
+    kernel_size = 50
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+    closed_mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+    
+    highlight_color = (0, 255, 0)  # Green highlight
+    outline_thickness = 5  # Thickness of the contour line
+
+    dilation_radius = padding_gap + (outline_thickness // 2)
+
+    if dilation_radius > 0:
+        dilation_kernel_size = 2 * dilation_radius + 1
+        dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_kernel_size, dilation_kernel_size))
+        
+        padded_mask_for_contour = cv2.dilate(closed_mask, dilation_kernel, iterations=1)
+    else:
+        padded_mask_for_contour = closed_mask
+    
+    contours, _ = cv2.findContours(padded_mask_for_contour.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cv2.drawContours(highlighted_rgb, contours, -1, highlight_color, outline_thickness)
+
+    return closed_mask, highlighted_rgb
 
 
 def save_best_views(dataset, object_dict, args):
