@@ -82,3 +82,6 @@ Thumbs.db
 
 # Output files
 vlm_caption/outputs/
+
+# Backup files
+*_backup*

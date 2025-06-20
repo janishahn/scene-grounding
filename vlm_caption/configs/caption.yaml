@@ -4,9 +4,17 @@ dataset:
   splits_file: maskclustering/splits/scannetpp.txt
 
 model:
-  name: qwen2.5vl:7b
-  backend: ollama
-  quantize: true
+  # Main model used for original / context images
+  original:
+    name: qwen2.5vl:7b
+    backend: ollama
+    quantize: true
+
+  # Model dedicated to the highlighted (masked) object crops
+  highlighted:
+    name: nvidia/DAM-3B-Self-Contained
+    backend: dam
+    quantize: false  # DAM weights are already quant-efficient; set to true if needed
 
 inference:
   output_dir: vlm_caption/outputs

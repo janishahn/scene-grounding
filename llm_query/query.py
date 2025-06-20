@@ -40,7 +40,12 @@ def query_scene(captions_path: str):
     # Reduce captions to only the cropped version
     lean_captions = {}
     for id, val in captions.items():
-        lean_captions[id] = val['captions']['highlighted']['text']
+        captions_block = val.get('captions', {})
+        text = (
+            captions_block.get('combined', {}).get('text')
+            or captions_block.get('highlighted', {}).get('text', '')
+        )
+        lean_captions[id] = text
 
     # Optional vector retrieval to shrink candidate set
     seq_name = Path(captions_path).name.split(".")[0]

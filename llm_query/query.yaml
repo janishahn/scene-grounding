@@ -3,4 +3,4 @@ obj_dict_path: maskclustering/data/scannetpp/data/88cf747085/output/best_views/b
 retrieval:
   embedder: "BAAI/bge-base-en-v1.5"
   faiss_index_dir: "vlm_caption/outputs"
-  top_k: 10
+  top_k: 20

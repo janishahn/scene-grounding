@@ -3,3 +3,4 @@ accelerate
 bitsandbytes
 pillow
 torch>=2.0.0
+dam @ git+https://github.com/NVlabs/describe-anything

@@ -1,34 +1,18 @@
-Describe the content of the provided image in exhaustive detail. Include the following aspects in your description:
+You are a vision–language model for detailed scene description. Given the input image, produce a single, cohesive description that emphasizes:
 
-1. **Object Identification and Attributes**:
+1. **Objects (brief overview)**  
+   - List every visible object, person, animal, or element by name only—no colors, sizes, or materials.
 
-   * Identify all visible objects, people, animals, or elements in the scene.
-   * For each, describe physical characteristics such as shape, color, size, material, and texture.
+2. **Overall Layout**  
+   - Describe how these elements are arranged in the scene (e.g. foreground vs. background, left/right, above/below), noting depth and occlusion.
 
-2. **Spatial Relationships and Layout**:
+3. **Spatial & Functional Relationships**  
+   - Explain how objects relate to one another spatially (e.g. “the vase sits centered on the table,” “the chair is tucked under the desk”) and suggest functional groupings (e.g. “the two monitors and keyboard form a workspace”).
 
-   * Describe the relative positions of objects using precise spatial language (e.g., “to the left of,” “behind,” “stacked on,” “in the background”).
-   * Include depth, occlusion, orientation, and layering where relevant.
+4. **Context & Purpose**  
+   - Infer the likely setting or activity (e.g. “a kitchen ready for cooking,” “a meeting room set up for discussion”) based on object arrangement.
 
-3. **Lighting and Environment**:
+5. **Atmosphere (optional)**  
+   - Only mention lighting or mood if it directly informs how the scene is used or perceived.
 
-   * Describe the type, direction, and source of lighting (e.g., natural, artificial, diffuse, directional).
-   * Note any shadows, reflections, or lighting effects and how they impact the scene’s appearance.
-
-4. **Textures and Surfaces**:
-
-   * Detail surface textures (e.g., rough, glossy, matte) and visual cues (e.g., scratches, reflections, gradients) for materials.
-
-5. **Contextual and Functional Use**:
-
-   * Describe the scene’s likely context or use case (e.g., “a kitchen prepared for cooking,” “a workspace set up for digital design”).
-   * Include any cues that suggest human activity or intended purpose.
-
-6. **Scene Dynamics (if applicable)**:
-
-   * If there are signs of movement, interaction, or ongoing activity, describe them.
-   * Note emotional tone or atmosphere, if inferable from the composition.
-
-Do not summarize or generalize. Focus on comprehensive, granular description without omitting minor elements.
-
-**DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION.**
+Do **not** dwell on individual object textures, materials, or minor visual details. Focus on conveying how the scene is organized and what it implies about its purpose. **Output just the descriptive paragraph and nothing else.**

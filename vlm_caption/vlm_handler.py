@@ -3,7 +3,7 @@ import base64
 import logging
 import os
 import time
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any, Optional
 from PIL import Image
 import torch
 import ollama
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 class VLMHandler:
     """
     Unified interface for image captioning backends.
-    Supported backends: 'transformers', 'ollama'.
+    Supported backends: 'transformers', 'ollama', 'dam'.
     """
     def __init__(self, model_name: str, backend: str = "transformers", quantize: bool = False):
         self.model_name = model_name
@@ -71,6 +71,29 @@ class VLMHandler:
             else:
                 self._captioner = pipeline("image-to-text", **hf_kwargs)
 
+        elif self.backend == "dam":
+            # NVIDIA Describe Anything Model (DAM) – detailed mask-aware captioning
+            import torch
+            from transformers import AutoModel
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            dam_model = AutoModel.from_pretrained(
+                model_name,
+                trust_remote_code=True,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            ).to(device)
+
+            # The DAM repository exposes a helper to build the captioning callable.
+            # We retain the handle on the object for later usage in `caption_image`.
+            self._dam = dam_model.init_dam(
+                conv_mode="v1",
+                prompt_mode="full+focal_crop",
+            )
+
+            # fall back values so that attribute always exists
+            self._captioner = None
+
         elif self.backend == "ollama":
             logging.getLogger("ollama").setLevel(logging.WARNING)
             logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -106,11 +129,49 @@ class VLMHandler:
             "max_tokens": 1024
         }
 
-    def caption_image(self, image: Image.Image, prompt: str = None) -> str:
+    def caption_image(self, image: Image.Image, prompt: str = None, mask: Optional[Image.Image] = None) -> str:
         """
         Generate a caption for a single image, returning a string.
         """
-        if self.backend == "ollama":
+        if self.backend == "dam":
+            # Detailed Localised Captioning requires a binary mask
+            if mask is None:
+                raise ValueError("Mask image must be provided when using the 'dam' backend.")
+
+            if not prompt:
+                prompt = "Describe the masked region in detail."
+
+            # Ensure mandatory <image> token is included for DAM focal prompt
+            if "<image>" not in prompt:
+                prompt = "<image>\n" + prompt
+
+            # DAM expects mask to be single-channel (L) PIL image with values {0,255}
+            if mask.mode != "L":
+                mask = mask.convert("L")
+
+            try:
+                res = self._dam.get_description(
+                    image,
+                    mask,
+                    prompt,
+                    streaming=False,
+                    temperature=0.7,
+                    top_p=0.9,
+                    num_beams=1,
+                    max_new_tokens=1024,
+                )
+                # Depending on DAM implementation, `res` can be str or list of str
+                if isinstance(res, str):
+                    return res.strip()
+                if isinstance(res, list):
+                    return "".join(res).strip()
+                # generator / iterator fallback
+                return "".join(list(res)).strip()
+            except Exception as e:
+                logging.error(f"DAM captioning failed: {e}")
+                return ""
+
+        elif self.backend == "ollama":
             buf = io.BytesIO()
             image.save(buf, format="PNG")
             img_bytes = buf.getvalue()

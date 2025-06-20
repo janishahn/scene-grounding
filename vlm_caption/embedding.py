@@ -21,9 +21,15 @@ def _load_captions(captions_path: str) -> List[tuple[int, str]]:
             obj_id = int(k)
         except ValueError:
             continue
-        highlighted = v["captions"].get("highlighted", {}).get("text", "")
-        original = v["captions"].get("original", {}).get("text", "")
-        combined = (highlighted + " " + original).strip()
+        captions_block = v.get("captions", {})
+        combined_caption = captions_block.get("combined", {}).get("text", "")
+
+        if combined_caption:
+            combined = combined_caption.strip()
+        else:
+            highlighted = captions_block.get("highlighted", {}).get("text", "")
+            original = captions_block.get("original", {}).get("text", "")
+            combined = (highlighted + " " + original).strip()
         if combined:
             pairs.append((obj_id, combined))
     pairs.sort(key=lambda x: x[0])
