@@ -3,6 +3,7 @@ import yaml
 import logging
 import tempfile
 import json
+import time
 import torch
 import numpy as np
 import cv2
@@ -24,6 +25,47 @@ def setup_logging(debug: bool):
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
+
+def wait_for_gpu_memory(min_free_mb: int = 1024, timeout: int = 300, interval: int = 5) -> None:
+    """Block until at least *min_free_mb* of GPU memory is free.
+
+    Parameters
+    ----------
+    min_free_mb: int, optional
+        Minimum free memory (in MiB) that must be available before returning.
+    timeout: int, optional
+        Maximum time (in seconds) to wait before giving up.
+    interval: int, optional
+        How often (in seconds) to poll GPU memory.
+    """
+    if not torch.cuda.is_available():
+        return  # nothing to do on CPU-only systems
+
+    device = torch.cuda.current_device()
+    start_time = time.time()
+
+    # Try to clear any cached allocations first
+    torch.cuda.empty_cache()
+
+    while True:
+        free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+        free_mb = free_bytes // (1024 * 1024)
+
+        if free_mb >= min_free_mb:
+            logging.info(f"GPU memory check passed: {free_mb} MiB free (≥ {min_free_mb} MiB)")
+            break
+
+        elapsed = time.time() - start_time
+        if elapsed > timeout:
+            logging.warning(
+                f"Timeout ({timeout}s) waiting for GPU memory; only {free_mb} MiB free. Proceeding anyway."
+            )
+            break
+
+        logging.info(
+            f"Waiting for GPU memory: {free_mb} MiB free (< {min_free_mb} MiB). Sleeping {interval}s ..."
+        )
+        time.sleep(interval)
 
 def read_splits(splits_file: str) -> List[str]:
     with open(splits_file) as f:
@@ -144,13 +186,14 @@ def merge_captions(
         return (highlighted + " " + original).strip()
 
     try:
-        from ollama import chat  # local LLM backend; same dependency used in query stage
+        from ollama import chat
 
         system_prompt = (
             "You are a helpful assistant. Merge two descriptions that refer to the *same* object into a single "
             "caption. Give higher weight to the first description, which focuses only on the object, and use "
             "information from the second description only to fill in useful context. Keep as much detail from both descriptions as possible,"
-            "while avoiding repetition and emphasizing the object as it is described by the first description."
+            "while avoiding repetition and emphasizing the object as it is described by the first description. "
+            "**DO NOT OUTPUT ANYTHING OTHER THAN THE MERGED CAPTION.**"
         )
 
         user_prompt = (
@@ -258,11 +301,15 @@ def generate_captions_for_object(
 
     return obj_captions
 
-def create_vlm_captions(handler_highlighted: VLMHandler, handler_original: VLMHandler, root: str, seq: str, out_dir: str) -> bool:
+def create_vlm_captions_sequential(root: str, seq: str, out_dir: str, 
+                                  original_model_cfg: dict, highlighted_model_cfg: dict,
+                                  merging_model_cfg: dict | None = None) -> bool:
+    """
+    Create VLM captions in a sequential manner, first processing all original images,
+    then all highlighted images to avoid GPU memory conflicts.
+    """
     logging.info(f"====> Processing scene {seq}")
-    logging.info(f"Highlighted backend: {handler_highlighted.backend}, model: {handler_highlighted.model_name}")
-    logging.info(f"Original backend: {handler_original.backend}, model: {handler_original.model_name}")
-
+    
     # Load object dict
     dict_path = os.path.join(root, "scannetpp/data", seq, "output/best_views/best_view_object_dict.pth")
     obj_dict = load_object_dict(dict_path)
@@ -275,23 +322,174 @@ def create_vlm_captions(handler_highlighted: VLMHandler, handler_original: VLMHa
         return True
     
     captions: Dict[int, Dict[str, str]] = {}
-    bar = tqdm(total=len(to_caption) * 3, desc=f"Captioning {seq}", unit="step")
-    # Create captions for all relevant objects
+    
+    # PHASE 1: Process all original images first
+    logging.info("====> PHASE 1: Processing original images with Ollama model")
+    handler_original = VLMHandler(
+        model_name=original_model_cfg["name"],
+        backend=original_model_cfg.get("backend", "transformers"),
+        quantize=original_model_cfg.get("quantize", False),
+    )
+    logging.info(f"Original backend: {handler_original.backend}, model: {handler_original.model_name}")
+    
+    # Initialize progress bar for original images
+    bar_original = tqdm(total=len(to_caption), desc=f"Captioning original images for {seq}", unit="img")
+    
+    # Process all original images
     for object_id, img_paths in to_caption:
-        generated_obj_captions = generate_captions_for_object(
-            handler_highlighted,
-            handler_original,
-            object_id,
-            img_paths,
-            obj_dict,
-            bar,
-            root_dir=root,
-            seq_name=seq,
-        )
-        captions[object_id] = {"captions": generated_obj_captions}
+        if "original" not in img_paths:
+            bar_original.update(1)
+            continue
+            
+        try:
+            # Create caption for original image
+            img = Image.open(img_paths["original"]).convert("RGB")
+            
+            with open("vlm_caption/general_captioning_prompt.md", "r") as f:
+                prompt = f.read().strip()
+                
+            text = handler_original.caption_image(img, prompt=prompt)
+            obj_dict[object_id]["best_view"]["original_caption"] = text
+            
+            if object_id not in captions:
+                captions[object_id] = {"captions": {"original": {"text": text, "img_path": img_paths["original"]}}}
+            else:
+                captions[object_id]["captions"]["original"] = {"text": text, "img_path": img_paths["original"]}
+                
+        except Exception as e:
+            logging.warning(f"Failed to process original image for object {object_id}: {e}")
+        finally:
+            bar_original.update(1)
+    
+    bar_original.close()
+    
+    # Save intermediate results
+    if not save_object_dict(obj_dict, dict_path):
+        logging.error("Failed to save updated object dict after original image processing")
+        return False
+        
+    # Explicitly unload the original model to free GPU memory
+    if handler_original.unload():
+        logging.info(f"Successfully unloaded {handler_original.model_name} from memory")
+    else:
+        logging.warning(f"Failed to unload {handler_original.model_name}, may still be using GPU memory")
+    
+    # PHASE 2: Process all highlighted images
+    logging.info("====> PHASE 2: Processing highlighted images with DAM model")
 
-    bar.close()
+    # Ensure VRAM is really free before loading the DAM model
+    wait_for_gpu_memory(min_free_mb=8192, timeout=300, interval=5)
 
+    handler_highlighted = VLMHandler(
+        model_name=highlighted_model_cfg["name"],
+        backend=highlighted_model_cfg.get("backend", "transformers"),
+        quantize=highlighted_model_cfg.get("quantize", False),
+    )
+    logging.info(f"Highlighted backend: {handler_highlighted.backend}, model: {handler_highlighted.model_name}")
+    
+    # Initialize progress bar for highlighted images
+    bar_highlighted = tqdm(total=len(to_caption), desc=f"Captioning highlighted images for {seq}", unit="img")
+    
+    # Process all highlighted images
+    for object_id, img_paths in to_caption:
+        if "highlighted" not in img_paths:
+            bar_highlighted.update(1)
+            continue
+            
+        try:
+            # Create caption for highlighted image
+            img = Image.open(img_paths["highlighted"]).convert("RGB")
+            
+            with open("vlm_caption/object_captioning_prompt.md", "r") as f:
+                prompt = f.read().strip()
+            
+            # Build mask for DAM if required
+            mask_img = None
+            if handler_highlighted.backend == "dam":
+                # Retrieve frame_id and mask_id from object dict
+                bv = obj_dict[object_id]["best_view"]
+                frame_id = bv["frame_id"]
+                mask_id = bv["mask_id"]
+
+                seg_path = os.path.join(root, "scannetpp/data", seq, "output/mask", f"frame_{frame_id:06d}.png")
+                if not os.path.exists(seg_path):
+                    raise FileNotFoundError(f"Segmentation file not found: {seg_path}")
+                segmentation = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED)
+
+                binary_mask = (segmentation == mask_id).astype("uint8") * 255
+
+                # Ensure the mask dimensions match the image that will be sent to DAM
+                img_w, img_h = img.size  # PIL gives (W, H)
+                mask_h, mask_w = binary_mask.shape  # NumPy gives (H, W)
+
+                # 1) Crop using stored bounding box if we are captioning a cropped image
+                if (mask_h, mask_w) != (img_h, img_w):
+                    bv_meta = obj_dict[object_id]["best_view"]
+                    if "bbox" in bv_meta:
+                        left, top, right, bottom = bv_meta["bbox"]
+                        binary_mask = binary_mask[top:bottom + 1, left:right + 1]
+                        mask_h, mask_w = binary_mask.shape
+
+                # 2) If dimensions still mismatch, fall back to a resize (keeps nearest-neighbour sampling)
+                if (mask_h, mask_w) != (img_h, img_w):
+                    binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
+
+                from PIL import Image as PILImage
+                mask_img = PILImage.fromarray(binary_mask)
+                
+            text = handler_highlighted.caption_image(img, prompt=prompt, mask=mask_img)
+            obj_dict[object_id]["best_view"]["highlighted_caption"] = text
+            
+            if object_id not in captions:
+                captions[object_id] = {"captions": {"highlighted": {"text": text, "img_path": img_paths["highlighted"]}}}
+            else:
+                captions[object_id]["captions"]["highlighted"] = {"text": text, "img_path": img_paths["highlighted"]}
+                
+        except Exception as e:
+            logging.warning(f"Failed to process highlighted image for object {object_id}: {e}")
+        finally:
+            bar_highlighted.update(1)
+    
+    bar_highlighted.close()
+
+    # Unload the highlighted model before merging captions to free up GPU memory
+    if handler_highlighted.unload():
+        logging.info(f"Successfully unloaded {handler_highlighted.model_name} from memory")
+    else:
+        logging.warning(f"Failed to unload {handler_highlighted.model_name}, may still be using GPU memory")
+
+    # PHASE 3: Merge captions
+    logging.info("====> PHASE 3: Merging captions")
+    bar_merge = tqdm(total=len(to_caption), desc=f"Merging captions for {seq}", unit="obj")
+    
+    # Use a dedicated merging model if provided, otherwise fall back to the original model
+    merge_model_name = (
+        merging_model_cfg["name"] if merging_model_cfg and "name" in merging_model_cfg else original_model_cfg["name"]
+    )
+    
+    for object_id in captions:
+        try:
+            obj_captions = captions[object_id]["captions"]
+            highlighted_text = obj_captions.get("highlighted", {}).get("text", "")
+            original_text = obj_captions.get("original", {}).get("text", "")
+            
+            # Merge the two captions into one cohesive description using an LLM
+            merged = merge_captions(
+                highlighted_text,
+                original_text,
+                model_name=merge_model_name,
+            )
+            
+            obj_captions["combined"] = {"text": merged}
+            obj_dict[object_id]["best_view"]["combined_caption"] = merged
+        except Exception as e:
+            logging.warning(f"Failed to merge captions for object {object_id}: {e}")
+        finally:
+            bar_merge.update(1)
+    
+    bar_merge.close()
+    
+    # Save final results
     if not save_object_dict(obj_dict, dict_path):
         logging.error("Failed to save updated object dict")
         return False
@@ -318,6 +516,13 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
     Run Vision Language Model (VLM) captioning on a set of scenes.
     This function loads configuration, sets up the model, and processes scenes
     to generate captions using a VLM.
+    
+    The captioning process is sequential:
+    1. First process all original images with the Ollama model
+    2. Unload the Ollama model to free GPU memory
+    3. Then process all highlighted images with the DAM model
+    4. Finally merge the captions
+    
     Args:
         config_file (str, optional): Path to the YAML configuration file.
             Defaults to "vlm_caption/caption.yaml".
@@ -338,40 +543,33 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
     else:
         scenes = read_splits(dataset_cfg["splits_file"])
 
-    # Support separate models for highlighted vs original images.
+    # Get model configurations
     if "highlighted" in model_cfg and "original" in model_cfg:
         h_cfg = model_cfg["highlighted"]
         o_cfg = model_cfg["original"]
-
-        handler_highlighted = VLMHandler(
-            model_name=h_cfg["name"],
-            backend=h_cfg.get("backend", "transformers"),
-            quantize=h_cfg.get("quantize", False),
-        )
-
-        handler_original = VLMHandler(
-            model_name=o_cfg["name"],
-            backend=o_cfg.get("backend", "transformers"),
-            quantize=o_cfg.get("quantize", False),
-        )
     else:
         # Backwards compatibility: use single model for both
-        handler_highlighted = handler_original = VLMHandler(
-            model_name=model_cfg["name"],
-            backend=model_cfg.get("backend", "transformers"),
-            quantize=model_cfg.get("quantize", False),
-        )
+        h_cfg = o_cfg = {
+            "name": model_cfg["name"],
+            "backend": model_cfg.get("backend", "transformers"),
+            "quantize": model_cfg.get("quantize", False),
+        }
+
+    # Merger model (optional)
+    m_cfg = model_cfg.get("merging", o_cfg)
 
     out_dir = inference_cfg.get("output_dir", "outputs")
+    os.makedirs(out_dir, exist_ok=True)
 
     success = 0 
     for seq in scenes:
-        ok = create_vlm_captions(
-            handler_highlighted,
-            handler_original,
+        ok = create_vlm_captions_sequential(
             root=dataset_cfg["root"],
             seq=seq,
             out_dir=out_dir,
+            original_model_cfg=o_cfg,
+            highlighted_model_cfg=h_cfg,
+            merging_model_cfg=m_cfg,
         )
         if ok:
             success += 1

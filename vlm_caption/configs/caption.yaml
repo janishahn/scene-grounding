@@ -8,13 +8,19 @@ model:
   original:
     name: qwen2.5vl:7b
     backend: ollama
-    quantize: true
+    quantize: false
 
   # Model dedicated to the highlighted (masked) object crops
   highlighted:
     name: nvidia/DAM-3B-Self-Contained
     backend: dam
-    quantize: false  # DAM weights are already quant-efficient; set to true if needed
+    quantize: false
+
+  # Model used for caption merging
+  merging:
+    name: gemma3:4b-it-qat
+    backend: ollama
+    quantize: false
 
 inference:
   output_dir: vlm_caption/outputs

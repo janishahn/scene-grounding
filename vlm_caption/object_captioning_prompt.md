@@ -1,43 +1,33 @@
-The image you see is a tight crop that contains only the target object and a minimal amount of surrounding context.  Describe this single object exhaustively, addressing the aspects below **in the given order**:
+Describe the highlighted object in this image in detail, covering each aspect:
 
-1. **Function and Purpose**
+1. **Function & Use**
+   - What is the object and its purpose?
+   - How is it normally handled or operated?
+   - Note any alternate or symbolic uses implied by context.
 
-   * Explain what the object is and its primary function or intended use.
-   * Describe how a person or system typically interacts with it.
-   * If context implies alternate uses or symbolic significance, include that as well.
+2. **Position & Orientation**
+   - Where does it sit in the frame (e.g., center, bottom-left)?
+   - How is it oriented (upright, tilted, face-down)?
+   - How does it relate to nearby elements (resting, leaning, partially hidden)?
 
-2. **Spatial Position and Orientation**
+3. **Form & Structure**
+   - What is its overall shape or silhouette?
+   - Identify distinct parts, contours, or assemblies.
 
-   * Specify the object's position within the image frame (e.g., foreground, upper-right corner).
-   * Describe its orientation (e.g., standing upright, tilted, lying flat).
-   * Note its relationship to nearby objects (e.g., resting on a surface, partially obscured by another item).
+4. **Texture & Material**
+   - How would its surface feel (smooth, rough, perforated)?
+   - What material(s) does it appear made of, and where do they meet?
 
-3. **Shape and Structure**
+5. **Color & Pattern**
+   - Note dominant hues, gradients, markings, logos, or patterns.
+   - Mention any subtle variations in tone or contrast.
 
-   * Describe the geometric or organic form of the object.
-   * Mention any distinctive contours, parts, or components it may consist of.
+6. **Lighting & Effects**
+   - Describe shadows, highlights, reflections, transparency, or glow.
+   - Indicate light direction and its impact on appearance or mood.
 
-4. **Surface Texture and Material**
+7. **Condition & Details**
+   - State its state of repair or wear (new, scratched, stained).
+   - Call out fine features like seams, labels, buttons, or damage.
 
-   * Describe the tactile quality of the object's surface (e.g., smooth, grainy, perforated).
-   * Identify the material(s) it appears to be made from (e.g., metal, plastic, wood, fabric).
-   * If multiple materials are visible, describe their distribution and transition points.
-
-5. **Color and Patterns**
-
-   * Describe the object's dominant color(s) and any gradients, patterns, markings, or branding.
-   * Include subtleties in hue, saturation, and contrast if present.
-
-6. **Lighting and Visual Effects**
-
-   * Analyze how lighting interacts with the object: shadows, highlights, reflections, transparency, or glow.
-   * Specify the light direction and how it affects the visibility or mood of the object.
-
-7. **Condition and Detail**
-
-   * Comment on the object's condition (e.g., pristine, worn, damaged, dirty).
-   * Include any fine details, such as scratches, seams, buttons, labels, or other distinguishing features.
-
-Avoid mentioning any detection marks, cropping artefacts, or unrelated background elements.  Concentrate exclusively on the cropped object, delivering a rich, multi-dimensional description that captures both physical and contextual characteristics.
-
-**DO NOT OUTPUT ANYTHING OTHER THAN THE DESCRIPTION.**
+**DO NOT RETURN ANYTHING OTHER THAN YOUR DESCRIPTION OF THE OBJECT.**

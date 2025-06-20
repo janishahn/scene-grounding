@@ -4,3 +4,5 @@ retrieval:
   embedder: "BAAI/bge-base-en-v1.5"
   faiss_index_dir: "vlm_caption/outputs"
   top_k: 20
+  rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  rerank_top_k: 10

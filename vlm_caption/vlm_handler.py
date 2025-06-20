@@ -155,12 +155,13 @@ class VLMHandler:
                     mask,
                     prompt,
                     streaming=False,
-                    temperature=0.7,
-                    top_p=0.9,
-                    num_beams=1,
+                    temperature=0.85,
+                    top_p=0.95,
+                    num_beams=3,
                     max_new_tokens=1024,
+                    min_new_tokens=128,
                 )
-                # Depending on DAM implementation, `res` can be str or list of str
+                
                 if isinstance(res, str):
                     return res.strip()
                 if isinstance(res, list):
@@ -263,3 +264,68 @@ class VLMHandler:
         Generate a caption for each image in `images` sequentially, returning List[str].
         """
         return [self.caption_image(img) for img in images]
+        
+    def unload(self) -> bool:
+        """
+        Unload the model from memory.
+        Returns True if unload was successful, False otherwise.
+        """
+        try:
+            if self.backend == "ollama":
+                # Use the Ollama API to explicitly unload the model
+                import json
+                import requests
+                
+                payload = {
+                    "model": self.model_name,
+                    "keep_alive": 0
+                }
+                
+                response = requests.post(
+                    "http://localhost:11434/api/generate",
+                    json=payload
+                )
+                
+                if response.status_code == 200:
+                    resp_data = response.json()
+                    if resp_data.get("done_reason") == "unload":
+                        logging.info(f"Successfully unloaded model {self.model_name} from Ollama")
+                        return True
+                    else:
+                        logging.warning(f"Unexpected response when unloading model: {resp_data}")
+                        return False
+                else:
+                    logging.warning(f"Failed to unload model, status code: {response.status_code}")
+                    return False
+                    
+            elif self.backend == "dam" or self.backend == "transformers":
+                # For PyTorch models, delete the model and clear the cache
+                if hasattr(self, '_dam') and self._dam is not None:
+                    del self._dam
+                    self._dam = None
+                    
+                if hasattr(self, '_captioner') and self._captioner is not None:
+                    del self._captioner
+                    self._captioner = None
+                
+                # Force garbage collection and clear CUDA cache
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+                logging.info(f"Cleared model from GPU memory")
+                return True
+                
+            elif self.backend == "openrouter":
+                # OpenRouter is API-based, so no explicit unloading needed
+                logging.info("OpenRouter backend does not require explicit unloading")
+                return True
+                
+            else:
+                logging.warning(f"Unload not implemented for backend: {self.backend}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Error while unloading model: {e}")
+            return False

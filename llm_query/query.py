@@ -53,7 +53,15 @@ def query_scene(captions_path: str):
     index_dir = retrieval_cfg.get("faiss_index_dir", Path(captions_path).parent)
     index_path = Path(index_dir) / f"{seq_name}.faiss"
     ids_path = Path(index_dir) / f"{seq_name}.obj_ids.npy"
-    top_k = int(retrieval_cfg.get("top_k", 10))
+    # Adaptable top-k: can be an int, a float (fraction of total objects), or the string "sqrt"
+    top_k_cfg = retrieval_cfg.get("top_k", 20)
+    if isinstance(top_k_cfg, str) and top_k_cfg.lower() == "sqrt":
+        top_k = max(int(np.sqrt(len(lean_captions))), 1)
+    elif isinstance(top_k_cfg, float):
+        # treat as fraction of remaining captions
+        top_k = max(int(len(lean_captions) * top_k_cfg), 1)
+    else:
+        top_k = int(top_k_cfg)
     embedder_name = retrieval_cfg.get("embedder", "BAAI/bge-base-en-v1.5")
 
     if index_path.exists() and ids_path.exists():
@@ -66,7 +74,34 @@ def query_scene(captions_path: str):
             q_emb = embedder.encode([query], normalize_embeddings=True).astype("float32")
             _, I = index.search(q_emb, top_k)
             selected_ids = {str(obj_ids[i]) for i in I[0]}
+            logging.info(
+                "Embedding retrieval kept %d out of %d objects (top_k=%d). Remaining IDs: %s",
+                len(selected_ids),
+                len(captions),
+                top_k,
+                ", ".join(map(str, selected_ids)),
+            )
+
             lean_captions = {k: v for k, v in lean_captions.items() if k in selected_ids}
+
+            # Optional cross-encoder rerank for higher precision
+            rerank_model = retrieval_cfg.get("rerank_model")
+            if rerank_model:
+                from sentence_transformers import CrossEncoder
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                cross_enc = CrossEncoder(rerank_model, device=device)
+                pairs = [[query, txt] for txt in lean_captions.values()]
+                scores = cross_enc.predict(pairs)
+                rerank_k = int(retrieval_cfg.get("rerank_top_k", top_k))
+                sorted_pairs = sorted(zip(lean_captions.keys(), scores), key=lambda x: x[1], reverse=True)
+                keep_ids = [pid for pid, _ in sorted_pairs[:rerank_k]]
+                lean_captions = {k: lean_captions[k] for k in keep_ids}
+                logging.info(
+                    "Cross-encoder rerank kept %d objects (model=%s). IDs: %s",
+                    len(lean_captions),
+                    rerank_model,
+                    ", ".join(keep_ids),
+                )
         except Exception as e:
             logging.warning(f"Retrieval failed, falling back to full captions: {e}")
             query = input("Please enter your query here: ")
