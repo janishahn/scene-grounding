@@ -98,10 +98,11 @@ def main():
             sys.exit(1) # Exit if VLM captioning fails
 
     if pipeline_cfg.get("run_llm_query_pipeline", False):
+        # NOTE: The scene ID should be supplied as an argument
         try:
-            img_path = query_scene(captions_path="vlm_caption/outputs/88cf747085.captions.json")
+            img_path = query_scene(captions_path="vlm_caption/outputs/95d525fbfd.captions.json")
             if img_path:
-                abs_img_path = "/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/data/88cf747085/" + img_path
+                abs_img_path = "/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/data/95d525fbfd/" + img_path
                 logging.info("The image highlighting the queried object can be found at: " + abs_img_path)
             else:
                 logging.error("No image path returned from query_scene. The LLM may not have provided a valid object ID.")

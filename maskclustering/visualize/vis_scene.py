@@ -17,15 +17,25 @@ def main(args):
     point_size = 20
     label_colors, labels, centers = [], [], []
     dataset = get_dataset(args)
-    mesh = o3d.io.read_triangle_mesh(dataset.mesh_path)
-    scene_points = np.asarray(mesh.vertices)
+
+
+    # NOTE: Added by us (Markus & Janis)
+    # Handle different dataset types
+    if hasattr(dataset, 'mesh_path'):
+        mesh = o3d.io.read_triangle_mesh(dataset.mesh_path)
+        scene_points = np.asarray(mesh.vertices)
+        scene_colors = np.asarray(mesh.vertex_colors)
+        # Since the color of raw scan may be too dark, we brighten it tone mapping
+        scene_colors = np.power(scene_colors, 1/2.2)
+        scene_colors = scene_colors * 255
+    else: 
+        # ScanNet++ case - load from point cloud
+        scene_points = dataset.get_scene_points()
+        # Generate default colors if not available
+        scene_colors = np.ones((scene_points.shape[0], 3)) * 128  # Gray default
+    
+
     scene_points = scene_points - np.mean(scene_points, axis=0)
-    scene_colors = np.asarray(mesh.vertex_colors)
-
-    # Since the color of raw scan may be too dark, we brighten it tone mapping
-    scene_colors = np.power(scene_colors, 1/2.2)
-    scene_colors = scene_colors * 255
-
     instance_colors = np.zeros_like(scene_colors)
 
     v = viz.Visualizer()
