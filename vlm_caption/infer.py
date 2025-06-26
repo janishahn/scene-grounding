@@ -5,7 +5,6 @@ import tempfile
 import json
 import time
 import torch
-import numpy as np
 import cv2
 
 from typing import List, Dict
@@ -214,7 +213,7 @@ def merge_captions(
         logging.warning(f"Failed to merge captions via LLM ({e}), falling back to concatenation.")
         return (highlighted + " " + original).strip()
 
-def generate_captions_for_object(
+def create_object_specific_captions(
     handler_highlighted: VLMHandler,
     handler_original: VLMHandler,
     object_id: int,
@@ -275,8 +274,7 @@ def generate_captions_for_object(
                 if (mask_h, mask_w) != (img_h, img_w):
                     binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
 
-                from PIL import Image as PILImage
-                mask_img = PILImage.fromarray(binary_mask)
+                mask_img = Image.fromarray(binary_mask)
 
             text = handler.caption_image(img, prompt=prompt, mask=mask_img)
             obj_dict[object_id]["best_view"][f"{img_type}_caption"] = text
@@ -301,7 +299,7 @@ def generate_captions_for_object(
 
     return obj_captions
 
-def create_vlm_captions_sequential(root: str, seq: str, out_dir: str, 
+def create_general_captions(root: str, seq: str, out_dir: str, 
                                   original_model_cfg: dict, highlighted_model_cfg: dict,
                                   merging_model_cfg: dict | None = None) -> bool:
     """
@@ -334,6 +332,11 @@ def create_vlm_captions_sequential(root: str, seq: str, out_dir: str,
     
     # Initialize progress bar for original images
     bar_original = tqdm(total=len(to_caption), desc=f"Captioning original images for {seq}", unit="img")
+
+    # Get prompt
+    with open("vlm_caption/general_captioning_prompt.md", "r") as f:
+        prompt = f.read().strip()
+
     
     # Process all original images
     for object_id, img_paths in to_caption:
@@ -344,10 +347,6 @@ def create_vlm_captions_sequential(root: str, seq: str, out_dir: str,
         try:
             # Create caption for original image
             img = Image.open(img_paths["original"]).convert("RGB")
-            
-            with open("vlm_caption/general_captioning_prompt.md", "r") as f:
-                prompt = f.read().strip()
-                
             text = handler_original.caption_image(img, prompt=prompt)
             obj_dict[object_id]["best_view"]["original_caption"] = text
             
@@ -434,8 +433,7 @@ def create_vlm_captions_sequential(root: str, seq: str, out_dir: str,
                 if (mask_h, mask_w) != (img_h, img_w):
                     binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
 
-                from PIL import Image as PILImage
-                mask_img = PILImage.fromarray(binary_mask)
+                mask_img = Image.fromarray(binary_mask)
                 
             text = handler_highlighted.caption_image(img, prompt=prompt, mask=mask_img)
             obj_dict[object_id]["best_view"]["highlighted_caption"] = text
@@ -563,7 +561,7 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
 
     success = 0 
     for seq in scenes:
-        ok = create_vlm_captions_sequential(
+        ok = create_general_captions(
             root=dataset_cfg["root"],
             seq=seq,
             out_dir=out_dir,

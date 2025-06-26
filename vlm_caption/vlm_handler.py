@@ -3,11 +3,13 @@ import base64
 import logging
 import os
 import time
-from typing import List, Union, Dict, Any, Optional
-from PIL import Image
+import gc
 import torch
 import ollama
 import requests
+
+from typing import List, Dict, Any, Optional
+from PIL import Image
 from dotenv import load_dotenv
 
 class VLMHandler:
@@ -273,8 +275,6 @@ class VLMHandler:
         try:
             if self.backend == "ollama":
                 # Use the Ollama API to explicitly unload the model
-                import json
-                import requests
                 
                 payload = {
                     "model": self.model_name,
@@ -309,7 +309,6 @@ class VLMHandler:
                     self._captioner = None
                 
                 # Force garbage collection and clear CUDA cache
-                import gc
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()

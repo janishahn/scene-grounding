@@ -12,7 +12,7 @@ from torch import load
 from sentence_transformers import SentenceTransformer
 import faiss
 
-def query_scene(captions_path: str):
+def query_scene(captions_path: str, query: str = None):
     """
     Query a scene using captions and natural language input to identify a specific object.
     This function processes scene captions, takes a user query, and uses an LLM to identify 
@@ -21,6 +21,8 @@ def query_scene(captions_path: str):
 
     Args:
         captions_path (str): Path to the JSON file containing object captions.
+        query (str, optional): Natural language query to search for an object. If None, will
+                             prompt the user to enter a query.
     
     Returns:
         str or None: Path to the highlighted image of the identified object, or None if
@@ -69,8 +71,9 @@ def query_scene(captions_path: str):
             index = faiss.read_index(str(index_path))
             obj_ids = np.load(ids_path)
             embedder = SentenceTransformer(embedder_name, device="cuda" if torch.cuda.is_available() else "cpu")
-            # Get user query first
-            query = input("Please enter your query here: ")
+            # Get user query
+            if query is None:
+                query = input("Please enter your query here: ")
             q_emb = embedder.encode([query], normalize_embeddings=True).astype("float32")
             _, I = index.search(q_emb, top_k)
             selected_ids = {str(obj_ids[i]) for i in I[0]}
@@ -107,7 +110,8 @@ def query_scene(captions_path: str):
             query = input("Please enter your query here: ")
     else:
         logging.info("FAISS index not found, using all captions")
-        query = input("Please enter your query here: ")
+        if query is None:
+            query = input("Please enter your query here: ")
 
     # Print size of captions dictionary in bytes (after any filtering)
     print(f"Captions dictionary size: {len(json.dumps(lean_captions))}")
