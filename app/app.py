@@ -1,18 +1,38 @@
 import gradio as gr
+import logging
 import os
-import shutil
-import re
 
-# --- Backend: File-based Highlighting ---
+from llm_query.query import query_scene
 
-FILE_PATH = "../maskclustering/data/scannetpp/data/95d525fbfd/scans/mesh_aligned_0.05.glb"
+# Scene identifier must correspond to generated XML / indices
+SCENE_ID = "95d525fbfd"
+
+# Build absolute path to the scene GLB (maskclustering sits one level above repo root)
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+SCENE_MODEL_PATH = os.path.abspath(
+    os.path.join(repo_root, os.pardir, "maskclustering", "data", "scannetpp", "data", SCENE_ID, "scans", "mesh_aligned_0.05.glb")
+)
+
+# Directory that contains the GLB file – whitelist for Gradio
+SCAN_DIR = os.path.dirname(SCENE_MODEL_PATH)
 
 
-def find_object(query: str) -> str: 
+def find_object(user_query: str) -> str:
+    """Return path to scene model after logging retrieval info.
+
+    Currently returns the unmodified scene model; retrieval results are logged
+    for debugging. In a future iteration this could dynamically colour the
+    matched object and return a new GLB path.
     """
-    Takes the user query and returns a file path to a new & highlighted 3 model.
-    """
-    return FILE_PATH
+
+    try:
+        res = query_scene(scene_name=SCENE_ID, query=user_query, data_dir="vlm_caption/outputs", k=3)
+        logging.info(res)
+    except Exception as e:
+        logging.warning(f"Query failed: {e}")
+
+    # TODO: generate highlighted model, for now return original
+    return SCENE_MODEL_PATH
 
 # --- Gradio Frontend Definition ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
@@ -29,7 +49,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     with gr.Row():
         # The 3D Model component. It now gets updated by receiving a new file path.
         model_3d = gr.Model3D(
-            value=FILE_PATH, # Initial model to display
+            value=SCENE_MODEL_PATH,  # Initial model
         )       
         
         
@@ -50,5 +70,5 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
 # Launch the Gradio app.
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(allowed_paths=[SCAN_DIR])
 

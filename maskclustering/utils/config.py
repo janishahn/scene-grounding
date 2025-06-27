@@ -23,6 +23,7 @@ def get_args():
     parser.add_argument('--config', type=str, default='scannet')
     parser.add_argument('--debug', action="store_true")
     parser.add_argument('--steps_to_run', nargs='+', type=str, default=["2"])
+    parser.add_argument('--highlight-objects', type=int, nargs='*')
     args = parser.parse_args()
     args = update_args(args)
     return args

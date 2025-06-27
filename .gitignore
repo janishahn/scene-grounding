@@ -85,3 +85,6 @@ vlm_caption/outputs/
 
 # Backup files
 *_backup*
+
+# gradio
+*.gradio
