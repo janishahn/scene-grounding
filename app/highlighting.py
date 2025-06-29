@@ -124,7 +124,7 @@ def load_scene_data(scene_id):
     
     return ply_path, segmentation_points, masks
 
-def create_highlighted_scene(scene_id, object_ids_to_highlight, output_dir="scans"):
+def create_highlighted_scene(scene_id, object_ids_to_highlight, output_dir="app/scans"):
     """
     Complete pipeline to create a highlighted scene.
     
