@@ -11,7 +11,10 @@ from typing import List, Dict
 from PIL import Image
 from tqdm import tqdm
 from vlm_caption.vlm_handler import VLMHandler
-from vlm_caption.embedding import build_faiss_index
+
+# PyTorch performance settings
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
 
 def load_config(path: str) -> dict:
     with open(path, 'r') as f:
@@ -299,231 +302,170 @@ def create_object_specific_captions(
 
     return obj_captions
 
-def create_general_captions(root: str, seq: str, out_dir: str, 
-                                  original_model_cfg: dict, highlighted_model_cfg: dict,
+def create_general_captions(root: str, seq: str, out_dir: str,
+                                  original_model_cfg: dict,
+                                  highlighted_model_cfg: dict,
                                   merging_model_cfg: dict | None = None) -> bool:
-    """
-    Create VLM captions in a sequential manner, first processing all original images,
-    then all highlighted images to avoid GPU memory conflicts.
+    """Generate global and local DAM captions for every object of seq.
+
+    1. *Global caption* - object in full-scene context, using the prompt in
+       ``prompts/global_caption_prompt.md``.
+    2. *Local caption* - object-intrinsic description, using the prompt in
+       ``prompts/local_caption_prompt.md``.
+
+    Captions are written to ``<out_dir>/<seq>.captions.jsonl`` with one JSON
+    object per line:
+        {"scene_id": <str>, "object_id": <int>, "global": <str>, "local": <str>}.
     """
     logging.info(f"====> Processing scene {seq}")
-    
-    # Load object dict
+
+    # ------------------------------------------------------------------
+    # Load object dictionary and sanity-check
+    # ------------------------------------------------------------------
     dict_path = os.path.join(root, "scannetpp/data", seq, "output/best_views/best_view_object_dict.pth")
     obj_dict = load_object_dict(dict_path)
     logging.info(f"Loaded {len(obj_dict)} objects in dict")
-
-    # Get image paths
-    to_caption = get_image_paths_for_captioning(obj_dict, root, seq)
-    if len(to_caption) == 0:
-        logging.info("Nothing to caption")
-        return True
-    
-    captions: Dict[int, Dict[str, str]] = {}
-    
-    # PHASE 1: Process all original images first
-    logging.info("====> PHASE 1: Processing original images with Ollama model")
-    handler_original = VLMHandler(
-        model_name=original_model_cfg["name"],
-        backend=original_model_cfg.get("backend", "transformers"),
-        quantize=original_model_cfg.get("quantize", False),
-    )
-    logging.info(f"Original backend: {handler_original.backend}, model: {handler_original.model_name}")
-    
-    # Initialize progress bar for original images
-    bar_original = tqdm(total=len(to_caption), desc=f"Captioning original images for {seq}", unit="img")
-
-    # Get prompt
-    with open("vlm_caption/general_captioning_prompt.md", "r") as f:
-        prompt = f.read().strip()
-
-    
-    # Process all original images
-    for object_id, img_paths in to_caption:
-        if "original" not in img_paths:
-            bar_original.update(1)
-            continue
-            
-        try:
-            # Create caption for original image
-            img = Image.open(img_paths["original"]).convert("RGB")
-            text = handler_original.caption_image(img, prompt=prompt)
-            obj_dict[object_id]["best_view"]["original_caption"] = text
-            
-            if object_id not in captions:
-                captions[object_id] = {"captions": {"original": {"text": text, "img_path": img_paths["original"]}}}
-            else:
-                captions[object_id]["captions"]["original"] = {"text": text, "img_path": img_paths["original"]}
-                
-        except Exception as e:
-            logging.warning(f"Failed to process original image for object {object_id}: {e}")
-        finally:
-            bar_original.update(1)
-    
-    bar_original.close()
-    
-    # Save intermediate results
-    if not save_object_dict(obj_dict, dict_path):
-        logging.error("Failed to save updated object dict after original image processing")
+    if len(obj_dict) == 0:
+        logging.warning("Empty object dictionary - nothing to caption.")
         return False
-        
-    # Explicitly unload the original model to free GPU memory
-    if handler_original.unload():
-        logging.info(f"Successfully unloaded {handler_original.model_name} from memory")
-    else:
-        logging.warning(f"Failed to unload {handler_original.model_name}, may still be using GPU memory")
-    
-    # PHASE 2: Process all highlighted images
-    logging.info("====> PHASE 2: Processing highlighted images with DAM model")
 
-    # Ensure VRAM is really free before loading the DAM model
+    # Ensure adequate VRAM is available before we start captioning.
     wait_for_gpu_memory(min_free_mb=8192, timeout=300, interval=5)
 
-    handler_highlighted = VLMHandler(
-        model_name=highlighted_model_cfg["name"],
-        backend=highlighted_model_cfg.get("backend", "transformers"),
-        quantize=highlighted_model_cfg.get("quantize", False),
+    dam_cfg = highlighted_model_cfg if highlighted_model_cfg else original_model_cfg
+    handler = VLMHandler(
+        model_name=dam_cfg["name"],
+        backend="dam",
+        quantize=dam_cfg.get("quantize", False),
     )
-    logging.info(f"Highlighted backend: {handler_highlighted.backend}, model: {handler_highlighted.model_name}")
-    
-    # Initialize progress bar for highlighted images
-    bar_highlighted = tqdm(total=len(to_caption), desc=f"Captioning highlighted images for {seq}", unit="img")
-    
-    # Process all highlighted images
-    for object_id, img_paths in to_caption:
-        if "highlighted" not in img_paths:
-            bar_highlighted.update(1)
+    logging.info(f"Using DAM model: {handler.model_name}")
+
+    # Load prompts
+    with open("vlm_caption/prompts/global_caption_prompt.md", "r") as f:
+        global_prompt = f.read().strip()
+    with open("vlm_caption/prompts/local_caption_prompt.md", "r") as f:
+        local_prompt = f.read().strip()
+
+    # Iterate over objects and generate captions
+    total_steps = len(obj_dict) * 2  # two captions per object
+    bar = tqdm(total=total_steps, desc=f"Captioning {seq}", unit="step")
+
+    captions_jsonl: list[str] = []
+
+    for object_id, data in obj_dict.items():
+        best_view = data.get("best_view", {})
+        if not best_view:
+            bar.update(2)
             continue
-            
+
+        # Resolve original image path
+        rel_img = best_view.get("original_path")
+        if not rel_img:
+            logging.warning(f"Object {object_id}: no original_path; skipping.")
+            bar.update(2)
+            continue
+        img_path = os.path.join(root, "scannetpp/data", seq, rel_img)
+        if not os.path.exists(img_path):
+            logging.warning(f"Object {object_id}: image not found – {img_path}")
+            bar.update(2)
+            continue
+
+        # Load image
         try:
-            # Create caption for highlighted image
-            img = Image.open(img_paths["highlighted"]).convert("RGB")
-            
-            with open("vlm_caption/object_captioning_prompt.md", "r") as f:
-                prompt = f.read().strip()
-            
-            # Build mask for DAM if required
-            mask_img = None
-            if handler_highlighted.backend == "dam":
-                # Retrieve frame_id and mask_id from object dict
-                bv = obj_dict[object_id]["best_view"]
-                frame_id = bv["frame_id"]
-                mask_id = bv["mask_id"]
-
-                seg_path = os.path.join(root, "scannetpp/data", seq, "output/mask", f"frame_{frame_id:06d}.png")
-                if not os.path.exists(seg_path):
-                    raise FileNotFoundError(f"Segmentation file not found: {seg_path}")
-                segmentation = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED)
-
-                binary_mask = (segmentation == mask_id).astype("uint8") * 255
-
-                # Ensure the mask dimensions match the image that will be sent to DAM
-                img_w, img_h = img.size  # PIL gives (W, H)
-                mask_h, mask_w = binary_mask.shape  # NumPy gives (H, W)
-
-                # 1) Crop using stored bounding box if we are captioning a cropped image
-                if (mask_h, mask_w) != (img_h, img_w):
-                    bv_meta = obj_dict[object_id]["best_view"]
-                    if "bbox" in bv_meta:
-                        left, top, right, bottom = bv_meta["bbox"]
-                        binary_mask = binary_mask[top:bottom + 1, left:right + 1]
-                        mask_h, mask_w = binary_mask.shape
-
-                # 2) If dimensions still mismatch, fall back to a resize (keeps nearest-neighbour sampling)
-                if (mask_h, mask_w) != (img_h, img_w):
-                    binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
-
-                mask_img = Image.fromarray(binary_mask)
-                
-            text = handler_highlighted.caption_image(img, prompt=prompt, mask=mask_img)
-            obj_dict[object_id]["best_view"]["highlighted_caption"] = text
-            
-            if object_id not in captions:
-                captions[object_id] = {"captions": {"highlighted": {"text": text, "img_path": img_paths["highlighted"]}}}
-            else:
-                captions[object_id]["captions"]["highlighted"] = {"text": text, "img_path": img_paths["highlighted"]}
-                
+            img = Image.open(img_path).convert("RGB")
         except Exception as e:
-            logging.warning(f"Failed to process highlighted image for object {object_id}: {e}")
-        finally:
-            bar_highlighted.update(1)
-    
-    bar_highlighted.close()
+            logging.warning(f"Object {object_id}: failed to load image - {e}")
+            bar.update(2)
+            continue
 
-    # Unload the highlighted model before merging captions to free up GPU memory
-    if handler_highlighted.unload():
-        logging.info(f"Successfully unloaded {handler_highlighted.model_name} from memory")
-    else:
-        logging.warning(f"Failed to unload {handler_highlighted.model_name}, may still be using GPU memory")
-
-    # PHASE 3: Merge captions
-    logging.info("====> PHASE 3: Merging captions")
-    bar_merge = tqdm(total=len(to_caption), desc=f"Merging captions for {seq}", unit="obj")
-    
-    # Use a dedicated merging model if provided, otherwise fall back to the original model
-    merge_model_name = (
-        merging_model_cfg["name"] if merging_model_cfg and "name" in merging_model_cfg else original_model_cfg["name"]
-    )
-    
-    for object_id in captions:
+        # Build binary mask for target object
         try:
-            obj_captions = captions[object_id]["captions"]
-            highlighted_text = obj_captions.get("highlighted", {}).get("text", "")
-            original_text = obj_captions.get("original", {}).get("text", "")
-            
-            # Merge the two captions into one cohesive description using an LLM
-            merged = merge_captions(
-                highlighted_text,
-                original_text,
-                model_name=merge_model_name,
-            )
-            
-            obj_captions["combined"] = {"text": merged}
-            obj_dict[object_id]["best_view"]["combined_caption"] = merged
+            frame_id = best_view["frame_id"]
+            mask_id = best_view["mask_id"]
+            seg_path = os.path.join(root, "scannetpp/data", seq, "output/mask", f"frame_{frame_id:06d}.png")
+            if not os.path.exists(seg_path):
+                raise FileNotFoundError(seg_path)
+            segmentation = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED)
+            binary_mask = (segmentation == mask_id).astype("uint8") * 255
+
+            # Resize if dimensions mismatch
+            img_w, img_h = img.size
+            mask_h, mask_w = binary_mask.shape
+            if (mask_w, mask_h) != (img_w, img_h):
+                binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
+
+            mask_img = Image.fromarray(binary_mask)
         except Exception as e:
-            logging.warning(f"Failed to merge captions for object {object_id}: {e}")
-        finally:
-            bar_merge.update(1)
-    
-    bar_merge.close()
-    
-    # Save final results
+            logging.warning(f"Object {object_id}: failed to build mask - {e}")
+            bar.update(2)
+            continue
+
+        # ------------------------------------------------------------------
+        # Caption pass 1 – Global (object-in-context)
+        # ------------------------------------------------------------------
+        global_caption = handler.caption_image(img, prompt=global_prompt, mask=mask_img)
+        bar.update(1)
+
+        # ------------------------------------------------------------------
+        # Caption pass 2 – Local (object-intrinsic)
+        # ------------------------------------------------------------------
+        local_caption = handler.caption_image(img, prompt=local_prompt, mask=mask_img)
+        bar.update(1)
+
+        # Store in object dictionary
+        best_view["global_caption"] = global_caption
+        best_view["local_caption"] = local_caption
+
+        # Build JSONL line
+        captions_jsonl.append(json.dumps({
+            "scene_id": seq,
+            "object_id": object_id,
+            "global": global_caption,
+            "local": local_caption,
+        }, ensure_ascii=False))
+
+    bar.close()
+
+    # Save results
     if not save_object_dict(obj_dict, dict_path):
         logging.error("Failed to save updated object dict")
         return False
 
-    # Save captions JSON
-    save_captions(captions, out_dir, seq)
-    captions_path = os.path.join(out_dir, f"{seq}.captions.json")
-    logging.info(f"Saved {len(captions)} object captions => {captions_path}")
+    os.makedirs(out_dir, exist_ok=True)
+    captions_path = os.path.join(out_dir, f"{seq}.captions.jsonl")
+    with open(captions_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(captions_jsonl))
 
-    # Build Faiss index for fast retrieval
+    logging.info(f"Saved captions ⇒ {captions_path}")
+
+    # Unload DAM to free GPU memory
+    handler.unload()
+
+    # Convert captions to structured XML via Gemma LLM
     try:
-        build_faiss_index(
-            captions_path=captions_path,
-            out_dir=out_dir,
-        )
-        logging.info("FAISS index built successfully")
+        from vlm_caption.xml_structuring import jsonl_to_xml
+        from vlm_caption.embedding_fields import build_field_indices
+
+        xml_path = os.path.join(out_dir, f"{seq}.xml")
+        jsonl_to_xml(captions_path, xml_path, scene_id=seq, model=(merging_model_cfg or {}).get("xml_model", "gemma3:4b-it-qat"))
+
+        # Build per-field FAISS indices
+        build_field_indices(xml_path, out_dir)
     except Exception as e:
-        logging.warning(f"Failed to build FAISS index: {e}")
+        logging.warning(f"Failed to convert captions to XML: {e}")
 
     return True
 
 def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
     """
-    Run Vision Language Model (VLM) captioning on a set of scenes.
-    This function loads configuration, sets up the model, and processes scenes
-    to generate captions using a VLM.
-    
-    The captioning process is sequential:
-    1. First process all original images with the Ollama model
-    2. Unload the Ollama model to free GPU memory
-    3. Then process all highlighted images with the DAM model
-    4. Finally merge the captions
-    
+    Run the two-pass NVIDIA DAM captioning pipeline (global & local) over a
+    collection of scenes.  Captions are saved as ``*.captions.jsonl`` files in
+    ``output_dir``.  Each line contains the scene id, object id, and the two
+    caption types.
+
     Args:
         config_file (str, optional): Path to the YAML configuration file.
-            Defaults to "vlm_caption/caption.yaml".
+            Defaults to "vlm_caption/configs/caption.yaml".
     Returns:
         None
     """
@@ -574,7 +516,7 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
 
     logging.info(f"Done: {success} succeeded, {len(scenes) - success} failed")
 
-    return os.path.join(out_dir, f"{seq}.captions.json")
+    return os.path.join(out_dir, f"{seq}.captions.jsonl")
 
 if __name__ == "__main__":
     run_vlm_captioning()

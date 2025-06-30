@@ -54,7 +54,7 @@ verbose: false
 # download_scenes: [0d2ee665be]
 
 # picked random scene ID from data/splits/nvs_sem_train.txt by hand
-download_scenes: [2a1b555966]
+download_scenes: [95d525fbfd]
 
 
 ###### specify the assets to download ######

@@ -2,7 +2,7 @@
 
 # General parameters
 general:
-  debug_logging: false
+  debug_logging: true
 
 # Mask Clustering Configuration
 mask_clustering:
@@ -11,7 +11,7 @@ mask_clustering:
   config_name: "scannetpp"
   # Steps to run in the mask clustering pipeline. Refer to maskclustering/run.py for detailed step descriptions.
   # Example: ["1", "2"] runs 2D mask prediction and then mask clustering.
-  steps_to_run: ["2"]
+  steps_to_run: ["1", "2"]
   # Enable debug flag for the maskclustering.main.main call.
   # This provides more verbose logging from the mask clustering process.
   debug: true
@@ -19,5 +19,5 @@ mask_clustering:
 # Pipeline execution control
 # Set these to true or false to enable/disable parts of the pipeline.
 run_mask_clustering_pipeline: false
-run_vlm_captioning_pipeline: false
-run_llm_query_pipeline: true
+run_vlm_captioning_pipeline: true
+run_llm_query_pipeline: false

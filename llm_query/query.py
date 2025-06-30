@@ -1,178 +1,175 @@
-import json
 import logging
-import yaml
-import re
 from pathlib import Path
+from typing import List, Tuple, Dict
 
 import numpy as np
 import torch
 
-from torch import load
-
 from sentence_transformers import SentenceTransformer
 import faiss
+from xml.etree import ElementTree as ET
 
-def query_scene(captions_path: str, query: str = None):
+from vlm_caption.xml_structuring import FIELDS
+
+__all__ = ["query_scene"]
+
+DEFAULT_EMBEDDER = "BAAI/bge-base-en-v1.5"
+
+def query_scene(
+    scene_name: str,
+    query: str,
+    data_dir: str = "vlm_caption/outputs",
+    k: int = 5,
+    per_field_k: int = 10,
+    score_threshold: float = 0.0,
+    embedder_name: str = DEFAULT_EMBEDDER,
+) -> Dict:
+    """Return top-k matching objects for *query* in *scene_name*.
+
+    Parameters
+    ----------
+    scene_name
+        Scene identifier (prefix used when saving XML & indices).
+    query
+        Natural-language query.
+    data_dir
+        Directory containing scene XML and FAISS index files.
+    k
+        Number of matches to return.
+    per_field_k
+        Number of candidates to retrieve from every field before aggregation.
+    score_threshold
+        Similarity threshold; candidates below this value are discarded.
+    embedder_name
+        Sentence-Transformer model.
+
+    Returns
+    -------
+    dict
+        {"field": <str>, "objects": List[Tuple[object_id, score, info_dict]]}
+        {'objects': List[Tuple[object_id, score, field, info_dict]], 'field': <str> (deprecated)}
     """
-    Query a scene using captions and natural language input to identify a specific object.
-    This function processes scene captions, takes a user query, and uses an LLM to identify 
-    the most relevant object in the scene. It then returns the path to an image highlighting
-    that object.
+    data_path = Path(data_dir)
+    xml_path = data_path / f"{scene_name}.xml"
+    if not xml_path.exists():
+        raise FileNotFoundError(xml_path)
 
-    Args:
-        captions_path (str): Path to the JSON file containing object captions.
-        query (str, optional): Natural language query to search for an object. If None, will
-                             prompt the user to enter a query.
-    
-    Returns:
-        str or None: Path to the highlighted image of the identified object, or None if
-                     no object could be identified from the LLM response.
-    """
-    
-    logging.info(f"Querying scene with captions from {captions_path}...")
-    # Get the configs from query.yaml
-    with open("llm_query/query.yaml", 'r') as f:
-        query_config = yaml.safe_load(f)
+    # Load indices
+    indices = _load_indices(scene_name, data_path)
+    if len(indices) == 0:
+        raise FileNotFoundError("No FAISS indices found for the scene.")
 
-    model_name = query_config.get("model", "")
+    # Embed query
+    embedder = SentenceTransformer(embedder_name, device="cuda" if torch.cuda.is_available() else "cpu")
+    q_emb = embedder.encode([query], normalize_embeddings=True).astype("float32")
 
-    # Load captions and get the query from the user
-    with open(captions_path, 'r') as f:
-        captions = json.load(f)
-    # Reduce captions to only the cropped version
-    lean_captions = {}
-    for id, val in captions.items():
-        captions_block = val.get('captions', {})
-        text = (
-            captions_block.get('combined', {}).get('text')
-            or captions_block.get('highlighted', {}).get('text', '')
-        )
-        lean_captions[id] = text
+    # Aggregate across all fields
+    ids, scores, best_fields = _aggregate_fields(q_emb, indices, k, per_field_k, score_threshold)
 
-    # Optional vector retrieval to shrink candidate set
-    seq_name = Path(captions_path).name.split(".")[0]
-    retrieval_cfg = query_config.get("retrieval", {})
-    index_dir = retrieval_cfg.get("faiss_index_dir", Path(captions_path).parent)
-    index_path = Path(index_dir) / f"{seq_name}.faiss"
-    ids_path = Path(index_dir) / f"{seq_name}.obj_ids.npy"
-    # Adaptable top-k: can be an int, a float (fraction of total objects), or the string "sqrt"
-    top_k_cfg = retrieval_cfg.get("top_k", 20)
-    if isinstance(top_k_cfg, str) and top_k_cfg.lower() == "sqrt":
-        top_k = max(int(np.sqrt(len(lean_captions))), 1)
-    elif isinstance(top_k_cfg, float):
-        # treat as fraction of remaining captions
-        top_k = max(int(len(lean_captions) * top_k_cfg), 1)
+    if len(ids) == 0:
+        logging.info("All similarities < threshold; returning empty result list.")
+        return {"objects": []}
+
+    # Collect info from XML
+    root = _load_xml(xml_path)
+    data = _gather_info(root, list(ids))
+
+    results = []
+    for obj_id, score, fld in zip(ids, scores, best_fields):
+        results.append((int(obj_id), float(score), fld, data.get(int(obj_id), {})))
+
+    # For backward compatibility keep the old key but mark as deprecated.
+    if results:
+        logging.warning("DEPRECATED: 'field' key in return dict will be removed in a future release. "
+                        "Consume the 'objects' list instead.")
+        deprecated_field = results[0][2]
     else:
-        top_k = int(top_k_cfg)
-    embedder_name = retrieval_cfg.get("embedder", "BAAI/bge-base-en-v1.5")
+        deprecated_field = None
 
-    if index_path.exists() and ids_path.exists():
+    return {"objects": results, "field": deprecated_field}
+
+def _load_indices(scene_prefix: str, index_dir: Path) -> Dict[str, Tuple[faiss.Index, np.ndarray]]:
+    """Load FAISS indices and id maps for all fields present."""
+    indices = {}
+    for field in FIELDS:
+        idx_path = index_dir / f"{scene_prefix}_{field}.faiss"
+        ids_path = index_dir / f"{scene_prefix}_{field}.obj_ids.npy"
+        if idx_path.exists() and ids_path.exists():
+            try:
+                idx = faiss.read_index(str(idx_path))
+                ids = np.load(ids_path)
+                indices[field] = (idx, ids)
+            except Exception as e:
+                logging.warning(f"Failed to load index for field '{field}': {e}")
+    return indices
+
+def _aggregate_fields(
+    query_emb: np.ndarray,
+    indices: Dict[str, Tuple[faiss.Index, np.ndarray]],
+    top_k: int,
+    per_field_k: int,
+    score_threshold: float,
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    """Search all fields and aggregate best-scoring unique objects.
+
+    Parameters
+    ----------
+    query_emb
+        Normalised query embedding, shape (1, dim).
+    indices
+        Mapping ``field -> (faiss_index, id_map)``.
+    top_k
+        Number of objects to return after aggregation.
+    per_field_k
+        Candidates to fetch from each field-specific index.
+    score_threshold
+        Discard hits whose similarity is below this value.
+
+    Returns
+    -------
+    ids, scores, best_fields
+        Arrays/lists aligned such that *ids[i]* has similarity *scores[i]* and came
+        from *best_fields[i]*.
+    """
+    best_per_obj: Dict[int, Tuple[float, str]] = {}
+
+    for field, (index, id_map) in indices.items():
         try:
-            index = faiss.read_index(str(index_path))
-            obj_ids = np.load(ids_path)
-            embedder = SentenceTransformer(embedder_name, device="cuda" if torch.cuda.is_available() else "cpu")
-            # Get user query
-            if query is None:
-                query = input("Please enter your query here: ")
-            q_emb = embedder.encode([query], normalize_embeddings=True).astype("float32")
-            _, I = index.search(q_emb, top_k)
-            selected_ids = {str(obj_ids[i]) for i in I[0]}
-            logging.info(
-                "Embedding retrieval kept %d out of %d objects (top_k=%d). Remaining IDs: %s",
-                len(selected_ids),
-                len(captions),
-                top_k,
-                ", ".join(map(str, selected_ids)),
-            )
-
-            lean_captions = {k: v for k, v in lean_captions.items() if k in selected_ids}
-
-            # Optional cross-encoder rerank for higher precision
-            rerank_model = retrieval_cfg.get("rerank_model")
-            if rerank_model:
-                from sentence_transformers import CrossEncoder
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                cross_enc = CrossEncoder(rerank_model, device=device)
-                pairs = [[query, txt] for txt in lean_captions.values()]
-                scores = cross_enc.predict(pairs)
-                rerank_k = int(retrieval_cfg.get("rerank_top_k", top_k))
-                sorted_pairs = sorted(zip(lean_captions.keys(), scores), key=lambda x: x[1], reverse=True)
-                keep_ids = [pid for pid, _ in sorted_pairs[:rerank_k]]
-                lean_captions = {k: lean_captions[k] for k in keep_ids}
-                logging.info(
-                    "Cross-encoder rerank kept %d objects (model=%s). IDs: %s",
-                    len(lean_captions),
-                    rerank_model,
-                    ", ".join(keep_ids),
-                )
+            scores, I = index.search(query_emb, per_field_k)
+            for s, idx in zip(scores[0], I[0]):
+                if s < score_threshold:
+                    continue
+                oid = int(id_map[idx])
+                if oid not in best_per_obj or s > best_per_obj[oid][0]:
+                    best_per_obj[oid] = (float(s), field)
         except Exception as e:
-            logging.warning(f"Retrieval failed, falling back to full captions: {e}")
-            query = input("Please enter your query here: ")
-    else:
-        logging.info("FAISS index not found, using all captions")
-        if query is None:
-            query = input("Please enter your query here: ")
+            logging.warning(f"Search failed for field '{field}': {e}")
 
-    # Print size of captions dictionary in bytes (after any filtering)
-    print(f"Captions dictionary size: {len(json.dumps(lean_captions))}")
+    if not best_per_obj:
+        # No candidates survived filtering.
+        return np.array([]), np.array([]), []
 
-    # Build prompt
-    system_prompt = build_system_prompt(lean_captions)
-    user_content = (
-        "Available objects:\n" + json.dumps(lean_captions, indent=2) +
-        f"\n\nUser query: {query}"
-    )
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    
-    logging.debug(
-        f"Prompt sizes (chars) – system: {len(system_prompt)}, user payload: {len(user_content)}"
-    )
+    # Sort globally by score descending and slice top_k
+    sorted_items = sorted(best_per_obj.items(), key=lambda it: it[1][0], reverse=True)[:top_k]
+    ids = np.array([item[0] for item in sorted_items])
+    scores = np.array([item[1][0] for item in sorted_items], dtype="float32")
+    fields = [item[1][1] for item in sorted_items]
+    return ids, scores, fields
 
-    # Call LLM with chat endpoint
-    logging.info("Querying LLM (chat) to find best object description for query...")
-    from ollama import chat
-    response = chat(
-        model=model_name,
-        messages=messages,
-        options={"num_ctx": 8192},
-    )
+def _load_xml(scene_xml: Path) -> ET.Element:
+    return ET.parse(scene_xml).getroot()
 
-    in_tok = response.get("prompt_eval_count")
-    out_tok = response.get("eval_count")
-    if in_tok is not None and out_tok is not None:
-        logging.info(
-            f"LLM token usage - input: {in_tok} tokens, output: {out_tok} tokens, total: {in_tok + out_tok}"
-        )
-    else:
-        logging.debug("Token usage metadata not found in LLM response")
-
-    resp_text = response["message"]["content"].strip()
-    logging.info("The LLM has returned the following response:")
-    logging.info(resp_text)
-
-    # Extract <object_id>...</object_id> from XML-like response
-    id_match = re.search(r"<object_id>(\d+)</object_id>", resp_text)
-    if not id_match:
-        logging.error("No <object_id> tag found in the LLM response.")
-        return None
-    object_id = id_match.group(1)
-
-    # Resolve image path from object dictionary
-    obj_dict_path = query_config.get('obj_dict_path', "")
-    obj_dict = load(obj_dict_path, weights_only=False)
-    try:
-        img_path = obj_dict[int(object_id)]['best_view']['highlighted_path']
-    except Exception as e:
-        logging.error(f"Could not retrieve image path for object {object_id}: {e}")
-        return None
-    
-    logging.info("Successfully identified object, returning image path.")
-    return img_path
-
-def build_system_prompt(captions: dict) -> str:
-    with open("llm_query/query_prompt.md", "r") as f:
-        base_prompt = f.read().strip()
-    return base_prompt
+def _gather_info(root: ET.Element, object_ids: List[int]) -> Dict[int, Dict[str, str]]:
+    info = {oid: {} for oid in object_ids}
+    for obj in root.findall("object"):
+        obj_id_attr = obj.attrib.get("id", "")
+        try:
+            oid = int(obj_id_attr.lstrip("obj_"))
+        except ValueError:
+            continue
+        if oid in info:
+            for tag in FIELDS:
+                elem = obj.find(tag)
+                if elem is not None and elem.text:
+                    info[oid][tag] = elem.text.strip()
+    return info

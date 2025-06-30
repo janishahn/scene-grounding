@@ -80,11 +80,24 @@ class VLMHandler:
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-            dam_model = AutoModel.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            ).to(device)
+            if quantize:
+                logging.info(f"Quantizing DAM model {model_name} with 4-bit quantization")
+                from transformers import BitsAndBytesConfig
+                quantization_config = BitsAndBytesConfig(load_in_4bit=True)
+
+                dam_model = AutoModel.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    quantization_config=quantization_config,
+                ).to(device)
+            else:
+                logging.info(f"Using full precision for DAM model {model_name}")
+                dam_model = AutoModel.from_pretrained(
+                    model_name,
+                    trust_remote_code=True,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                ).to(device)
 
             # The DAM repository exposes a helper to build the captioning callable.
             # We retain the handle on the object for later usage in `caption_image`.
@@ -157,10 +170,10 @@ class VLMHandler:
                     mask,
                     prompt,
                     streaming=False,
-                    temperature=0.85,
-                    top_p=0.95,
-                    num_beams=3,
-                    max_new_tokens=1024,
+                    temperature=0.6,
+                    top_p=0.8,
+                    num_beams=1,
+                    max_new_tokens=512,
                     min_new_tokens=128,
                 )
                 
