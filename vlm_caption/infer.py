@@ -451,6 +451,13 @@ def create_general_captions(root: str, seq: str, out_dir: str,
 
         # Build per-field FAISS indices
         build_field_indices(xml_path, out_dir)
+
+        # Build unified FAISS index for retrieve & rerank pipeline (Phase 1)
+        try:
+            from llm_query.build_unified_index import build_unified_index
+            build_unified_index(xml_path, out_dir)
+        except Exception as ind_err:
+            logging.warning(f"Failed to build unified index: {ind_err}")
     except Exception as e:
         logging.warning(f"Failed to convert captions to XML: {e}")
 

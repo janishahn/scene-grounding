@@ -62,12 +62,13 @@ def build_gallery_and_explanations(scene_id: str, objects: List[Tuple[int, float
     for obj_id, score, field, info in objects:
         img_path = _find_best_view(scene_id, obj_id)
         snippet = info.get(field, "") if isinstance(info, dict) else ""
-        caption = f"obj{obj_id} | {field} | {score:.2f}"
+        caption = f"obj{obj_id} | {score:.2f}"
         if snippet:
-            caption += f"\n{snippet[:100]}"  # truncate
+            caption += f"\n{snippet[:100]}"
         if img_path:
             gallery_items.append((img_path, caption))
-        explanation_rows.append([obj_id, round(score, 3), field, snippet])
+        truncated_snippet = snippet[:80] + ("..." if len(snippet) > 80 else "")
+        explanation_rows.append([obj_id, round(score, 3), truncated_snippet])
 
     return gallery_items, explanation_rows
 
@@ -87,10 +88,11 @@ def build_details_html(objects: List[Tuple[int, float, str, dict]]) -> str:
     return "\n".join(blocks)
 
 
-def find_object(user_query: str):
+def find_object(user_query: str, mode: str):
     """Return highlighted scene along with gallery and explanation table."""
     try:
-        result: dict = query_scene(scene_name=SCENE_ID, query=user_query, data_dir="vlm_caption/outputs", k=3)
+        use_fast = (mode == "Fast retrieval (bi-encoder + CE)")
+        result: dict = query_scene(scene_name=SCENE_ID, query=user_query, data_dir="vlm_caption/outputs", k=3, ce_only=not use_fast)
         objects = result.get('objects', [])
 
         object_ids = [obj[0] for obj in objects]
@@ -127,7 +129,7 @@ def test_highlighting(object_ids_str: str):
             if img_path:
                 gallery_items.append((img_path, f"obj{obj_id}"))
 
-        explanation_rows = [[obj_id, "-", "-", "-"] for obj_id in object_ids]
+        explanation_rows = [[obj_id, "-", "-"] for obj_id in object_ids]
         return final_path, gallery_items, explanation_rows, ""
     except ValueError as e:
         logging.warning(f"Invalid object ID format: {e}")
@@ -167,8 +169,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
 
     # Explanation table below
     explanation_table = gr.Dataframe(
-        headers=["Object", "Score", "Field", "Snippet"],
-        datatype=["number", "number", "str", "str"],
+        headers=["Object", "Logit", "Snippet"],
+        datatype=["number", "number", "str"],
         label="Explanation of Selection",
         interactive=False,
         wrap=True,
@@ -189,6 +191,13 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
             )
 
         with gr.Column():
+            ranking_mode = gr.Dropdown(
+                label="Ranking mode",
+                choices=["Fast retrieval (bi-encoder + CE)", "Cross-encoder only"],
+                value="Fast retrieval (bi-encoder + CE)",
+            )
+
+        with gr.Column():
             # Test textbox for highlighting
             test_input = gr.Textbox(
                 label="Test Object IDs",
@@ -199,7 +208,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
     # Event listener for the textbox submission.
     text_input.submit(
         fn=find_object,
-        inputs=text_input,
+        inputs=[text_input, ranking_mode],
         outputs=[model_3d, image_gallery, explanation_table, object_details]
     )
 
