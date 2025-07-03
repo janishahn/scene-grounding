@@ -8,6 +8,7 @@ from llm_query.query import query_scene
 from app.highlighting import create_highlighted_scene
 from app.convert import convert_to_glb
 from typing import List, Tuple
+from numpy import exp
 
 
 SCENE_ID = "95d525fbfd"
@@ -41,6 +42,13 @@ def initialization():
     )
     logging.info("Initialization complete.")
 
+def _logit_to_prob(score: float):
+    return 100 / (1 + exp(-score))
+
+def _score_to_percent(score: float, field: str) -> float:
+    if field.startswith("llm_"):
+        return score
+    return _logit_to_prob(score)
 
 def _find_best_view(scene_id: str, obj_id: int) -> str | None:
     """Return path to the best-view image for *obj_id* if available."""
@@ -61,14 +69,32 @@ def build_gallery_and_explanations(scene_id: str, objects: List[Tuple[int, float
 
     for obj_id, score, field, info in objects:
         img_path = _find_best_view(scene_id, obj_id)
-        snippet = info.get(field, "") if isinstance(info, dict) else ""
-        caption = f"obj{obj_id} | {score:.2f}"
-        if snippet:
-            caption += f"\n{snippet[:100]}"
+
+        # --------------------------------------------------------------
+        # Build snippet / explanation
+        # --------------------------------------------------------------
+        if field.startswith("llm_"):
+            # For any LLM-based retriever, display a concise preview (first 120 chars).
+            snippet = info.get("reasoning", "") if isinstance(info, dict) else ""
+            truncated_snippet = snippet[:120] + ("..." if len(snippet) > 120 else "")
+        else:
+            # For embedding or CE-based retrievers, attempt to show the
+            # most relevant object attributes (name / purpose / role / details).
+            important_tags = ["name", "purpose", "role", "details"]
+            parts = [info.get(tag, "") for tag in important_tags if info.get(tag)] if isinstance(info, dict) else []
+            snippet = " | ".join(parts)
+            truncated_snippet = snippet[:80] + ("..." if len(snippet) > 80 else "")
+
+        obj_name = info.get("name", "") if isinstance(info, dict) else ""
+        if not obj_name:
+            caption = f"obj{obj_id}"
+        else:
+            caption = f"{obj_id} | {obj_name}"
+
         if img_path:
             gallery_items.append((img_path, caption))
-        truncated_snippet = snippet[:80] + ("..." if len(snippet) > 80 else "")
-        explanation_rows.append([obj_id, round(score, 3), truncated_snippet])
+
+        explanation_rows.append([obj_id, round(_score_to_percent(score, field), 3)])
 
     return gallery_items, explanation_rows
 
@@ -80,8 +106,11 @@ def build_details_html(objects: List[Tuple[int, float, str, dict]]) -> str:
         rows = "".join(
             f"<li><b>{html.escape(k)}</b>: {html.escape(v)}</li>" for k, v in (info or {}).items()
         ) or "<i>No details available</i>"
+        display_field = field
+        if field.startswith("llm_") and isinstance(info, dict) and info.get("model_name"):
+            display_field = info["model_name"]
         block = (
-            f"<details><summary>obj{obj_id} | {score:.3f} | {field}</summary>"
+            f"<details><summary>obj{obj_id} | {_score_to_percent(score, field):.3f} | {display_field}</summary>"
             f"<ul style='margin-left:1em'>{rows}</ul></details>"
         )
         blocks.append(block)
@@ -91,8 +120,35 @@ def build_details_html(objects: List[Tuple[int, float, str, dict]]) -> str:
 def find_object(user_query: str, mode: str):
     """Return highlighted scene along with gallery and explanation table."""
     try:
-        use_fast = (mode == "Fast retrieval (bi-encoder + CE)")
-        result: dict = query_scene(scene_name=SCENE_ID, query=user_query, data_dir="vlm_caption/outputs", k=3, ce_only=not use_fast)
+        if mode == "LLM ranking (Ollama)":
+            result: dict = query_scene(
+                scene_name=SCENE_ID,
+                query=user_query,
+                data_dir="vlm_caption/outputs",
+                k=5,
+                retrieval_strategy="llm_ollama",
+            )
+        elif mode == "LLM ranking (OpenRouter)":
+            result: dict = query_scene(
+                scene_name=SCENE_ID,
+                query=user_query,
+                data_dir="vlm_caption/outputs",
+                k=5,
+                retrieval_strategy="llm_openrouter",
+                model_name="mistralai/mistral-small-3.2-24b-instruct:free"
+                # model_name="openrouter/cypher-alpha:free"
+                # model_name="google/gemma-3-27b-it:free"
+            )
+        else:
+            use_fast = (mode == "Fast retrieval (bi-encoder + CE)")
+            result: dict = query_scene(
+                scene_name=SCENE_ID,
+                query=user_query,
+                data_dir="vlm_caption/outputs",
+                k=5,
+                ce_only=not use_fast,
+                retrieval_strategy="embedding" if use_fast else "ce_only",
+            )
         objects = result.get('objects', [])
 
         object_ids = [obj[0] for obj in objects]
@@ -105,38 +161,18 @@ def find_object(user_query: str, mode: str):
         gallery_items, explanation_rows = build_gallery_and_explanations(SCENE_ID, objects)
         details_html = build_details_html(objects)
 
-        return final_path, gallery_items, explanation_rows, details_html
+        # Extract full reasoning for LLM modes (only for the top-ranked object).
+        full_reasoning = ""
+        if objects and objects[0][2].startswith("llm_"):
+            info_top = objects[0][3]
+            if isinstance(info_top, dict):
+                full_reasoning = info_top.get("reasoning", "")
+
+        return final_path, gallery_items, explanation_rows, full_reasoning, details_html
     except Exception as e:
         logging.warning(f"Query failed: {e}")
-        return SCENE_MODEL_PATH, [], [], ""
-
-
-def test_highlighting(object_ids_str: str):
-    try:
-        # Parse comma-separated string into list of integers
-        if not object_ids_str.strip():
-            return SCENE_MODEL_PATH, [], [], ""
-            
-        object_ids = [int(x.strip()) for x in object_ids_str.split(',') if x.strip()]
-        logging.info(f"Parsed object IDs: {object_ids}")
-        
-        path_to_ply_file = create_highlighted_scene(scene_id=SCENE_ID, object_ids_to_highlight=object_ids)
-        final_path = convert_to_glb(path_to_ply_file)
-
-        gallery_items: List[Tuple[str, str]] = []
-        for obj_id in object_ids:
-            img_path = _find_best_view(SCENE_ID, obj_id)
-            if img_path:
-                gallery_items.append((img_path, f"obj{obj_id}"))
-
-        explanation_rows = [[obj_id, "-", "-"] for obj_id in object_ids]
-        return final_path, gallery_items, explanation_rows, ""
-    except ValueError as e:
-        logging.warning(f"Invalid object ID format: {e}")
-        return SCENE_MODEL_PATH, [], [], ""
-    except Exception as e:
-        logging.warning(f"Highlighting failed: {e}")
-        return SCENE_MODEL_PATH, [], [], ""
+        # Failure path – keep output arity consistent.
+        return SCENE_MODEL_PATH, [], [], "", ""
 
 
 # --- Gradio Frontend Definition ---
@@ -148,6 +184,27 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
         """
     )
     
+    # Query input field and retrieval mode selector
+    with gr.Row():
+        with gr.Column():
+            text_input = gr.Textbox(
+                label="What object are you looking for?",
+                info="e.g., 'A place where I can wash my hands'",
+                placeholder="Type here and press Enter..."
+            )
+
+        with gr.Column():
+            ranking_mode = gr.Dropdown(
+                label="Ranking mode",
+                choices=[
+                    "Fast retrieval (bi-encoder + CE)",
+                    "Cross-encoder only",
+                    "LLM ranking (Ollama)",
+                    "LLM ranking (OpenRouter)",
+                ],
+                value="LLM ranking (OpenRouter)",
+            )
+
     with gr.Row():
         # The 3D Model component.
         with gr.Column():
@@ -162,60 +219,34 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                 show_label=True,
                 elem_id="object_gallery",
                 columns=2,
-                rows=2,
+                rows=3,
                 height="400px",
                 preview=True
             )
 
-    # Explanation table below
-    explanation_table = gr.Dataframe(
-        headers=["Object", "Logit", "Snippet"],
-        datatype=["number", "number", "str"],
-        label="Explanation of Selection",
-        interactive=False,
-        wrap=True,
-        visible=True,
-    )
+    # Explanation table and LLM reasoning side-by-side
+    with gr.Row():
+        with gr.Column(scale=0.8):
+            explanation_table = gr.Dataframe(
+                headers=["Object", "Probability (%)"],
+                datatype=["number", "number"],
+                label="Object Probabilities",
+                interactive=False,
+                wrap=True,
+                visible=True,
+            )
+        with gr.Column(scale=1.2):
+            gr.Markdown("### Reasoning")
+            reasoning_markdown = gr.Markdown(visible=True)
 
     # Collapsible full-object details (HTML <details> blocks)
     object_details = gr.HTML(label="Full Object Attributes")
-
-    with gr.Row():
-        
-        with gr.Column():
-            # The Textbox component for user input.
-            text_input = gr.Textbox(
-                label="What object are you looking for?",
-                info="e.g., 'A place where I can wash my hands'",
-                placeholder="Type here and press Enter..."
-            )
-
-        with gr.Column():
-            ranking_mode = gr.Dropdown(
-                label="Ranking mode",
-                choices=["Fast retrieval (bi-encoder + CE)", "Cross-encoder only"],
-                value="Fast retrieval (bi-encoder + CE)",
-            )
-
-        with gr.Column():
-            # Test textbox for highlighting
-            test_input = gr.Textbox(
-                label="Test Object IDs",
-                info="Enter object IDs to highlight (comma-separated)",
-                placeholder="e.g., 0, 1, 2"
-            )
 
     # Event listener for the textbox submission.
     text_input.submit(
         fn=find_object,
         inputs=[text_input, ranking_mode],
-        outputs=[model_3d, image_gallery, explanation_table, object_details]
-    )
-
-    test_input.submit(
-        fn=test_highlighting,
-        inputs=test_input,
-        outputs=[model_3d, image_gallery, explanation_table, object_details]
+        outputs=[model_3d, image_gallery, explanation_table, reasoning_markdown, object_details]
     )
 
 # Launch the Gradio app.
