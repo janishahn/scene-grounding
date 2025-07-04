@@ -127,11 +127,11 @@ def save_captions(captions: Dict[int, str], out_dir: str, seq: str):
 
 def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[tuple[int, Dict[str, str]]]:
     """
-    Collects absolute image paths for objects that have both (cropped) highlighted and original best views.
+    Collects absolute image paths for objects that have highlighted and original best views.
 
     Preference order:
-        highlighted -> highlighted_path (full-size image with green contour)
-        original    -> cropped_path > original_path
+        highlighted -> original_path
+        original    -> original_path
 
     We pass the full-size highlighted image to DAM so that the pixel mask aligns with the image dimensions.
     """
@@ -141,10 +141,9 @@ def get_image_paths_for_captioning(obj_dict: Dict, root: str, seq: str) -> List[
         if not best_view:
             continue
 
-        # Use the full-size image with green contour for DAM. Avoid cropped versions.
         preferred: Dict[str, List[str]] = {
-            "highlighted": ["highlighted_path"],
-            "original": ["cropped_path", "original_path"],
+            "highlighted": ["original_path"],
+            "original": ["original_path"],
         }
 
         paths: Dict[str, str] = {}
@@ -236,8 +235,21 @@ def create_object_specific_captions(
     obj_captions: Dict[str, str] = {"highlighted": "", "original": ""}
     for img_type, img_path in img_paths.items():
         try:
-            # Create caption for image and save it
-            img = Image.open(img_path).convert("RGB")
+            caption_img_path = img_path
+
+            if img_type == "highlighted":
+                bv_meta = obj_dict[object_id].get("best_view", {})
+                # Prefer the full-size unaltered frame.
+                for alt_key in ("original_path",):
+                    rel_alt = bv_meta.get(alt_key)
+                    if rel_alt:
+                        alt_path = os.path.join(root_dir, "scannetpp/data", seq_name, rel_alt)
+                        if os.path.exists(alt_path):
+                            caption_img_path = alt_path
+                            break
+
+            # Load image that will actually be sent to the captioning backend
+            img = Image.open(caption_img_path).convert("RGB")
 
             prompt_file = "vlm_caption/object_captioning_prompt.md" if img_type == "highlighted" else "vlm_caption/general_captioning_prompt.md"
             with open(prompt_file, "r") as f:
@@ -302,10 +314,16 @@ def create_object_specific_captions(
 
     return obj_captions
 
-def create_general_captions(root: str, seq: str, out_dir: str,
-                                  original_model_cfg: dict,
-                                  highlighted_model_cfg: dict,
-                                  merging_model_cfg: dict | None = None) -> bool:
+def create_general_captions(
+    root: str,
+    seq: str,
+    out_dir: str,
+    original_model_cfg: dict,
+    highlighted_model_cfg: dict,
+    merging_model_cfg: dict | None = None,
+    num_best_views: int = 1,
+    save_debug: bool = False,
+) -> bool:
     """Generate global and local DAM captions for every object of seq.
 
     1. *Global caption* - object in full-scene context, using the prompt in
@@ -346,83 +364,117 @@ def create_general_captions(root: str, seq: str, out_dir: str,
     with open("vlm_caption/prompts/local_caption_prompt.md", "r") as f:
         local_prompt = f.read().strip()
 
-    # Iterate over objects and generate captions
-    total_steps = len(obj_dict) * 2  # two captions per object
+    # Pre-compute actual number of views we will attempt (up to num_best_views per object)
+    total_views = 0
+    for data in obj_dict.values():
+        v = data.get("views")
+        if not v:
+            bv = data.get("best_view", {})
+            v = [bv] if bv else []
+        total_views += min(len(v), num_best_views)
+
+    total_steps = total_views * 2  # two caption passes per view
     bar = tqdm(total=total_steps, desc=f"Captioning {seq}", unit="step")
 
     captions_jsonl: list[str] = []
 
     for object_id, data in obj_dict.items():
-        best_view = data.get("best_view", {})
-        if not best_view:
-            bar.update(2)
+        views: list[dict] | None = data.get("views")
+        if not views:
+            bv = data.get("best_view", {})
+            views = [bv] if bv else []
+
+        if not views:
+            # No imagery available – skip object entirely (nothing to update since not counted)
             continue
 
-        # Resolve original image path
-        rel_img = best_view.get("original_path")
-        if not rel_img:
-            logging.warning(f"Object {object_id}: no original_path; skipping.")
-            bar.update(2)
-            continue
-        img_path = os.path.join(root, "scannetpp/data", seq, rel_img)
-        if not os.path.exists(img_path):
-            logging.warning(f"Object {object_id}: image not found – {img_path}")
-            bar.update(2)
-            continue
+        views = views[:num_best_views]
 
-        # Load image
-        try:
-            img = Image.open(img_path).convert("RGB")
-        except Exception as e:
-            logging.warning(f"Object {object_id}: failed to load image - {e}")
-            bar.update(2)
-            continue
+        # Create debug directory lazily if debugging is enabled
+        if save_debug:
+            dbg_dir_root = os.path.join(out_dir, "debug_masks", seq)
+            os.makedirs(dbg_dir_root, exist_ok=True)
 
-        # Build binary mask for target object
-        try:
-            frame_id = best_view["frame_id"]
-            mask_id = best_view["mask_id"]
-            seg_path = os.path.join(root, "scannetpp/data", seq, "output/mask", f"frame_{frame_id:06d}.png")
-            if not os.path.exists(seg_path):
-                raise FileNotFoundError(seg_path)
-            segmentation = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED)
-            binary_mask = (segmentation == mask_id).astype("uint8") * 255
+        global_caps: list[str] = []
+        local_caps: list[str] = []
 
-            # Resize if dimensions mismatch
-            img_w, img_h = img.size
-            mask_h, mask_w = binary_mask.shape
-            if (mask_w, mask_h) != (img_w, img_h):
-                binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
+        for view_idx, view_meta in enumerate(views):
+            # Resolve original image path for this view
+            rel_img = view_meta.get("original_path")
+            if not rel_img:
+                bar.update(2)
+                continue
+            img_path = os.path.join(root, "scannetpp/data", seq, rel_img)
+            if not os.path.exists(img_path):
+                logging.warning(f"Object {object_id}: image not found – {img_path}")
+                bar.update(2)
+                continue
 
-            mask_img = Image.fromarray(binary_mask)
-        except Exception as e:
-            logging.warning(f"Object {object_id}: failed to build mask - {e}")
-            bar.update(2)
-            continue
+            try:
+                img = Image.open(img_path).convert("RGB")
+            except Exception as e:
+                logging.warning(f"Object {object_id}: failed to load image - {e}")
+                bar.update(2)
+                continue
 
-        # ------------------------------------------------------------------
-        # Caption pass 1 – Global (object-in-context)
-        # ------------------------------------------------------------------
-        global_caption = handler.caption_image(img, prompt=global_prompt, mask=mask_img)
-        bar.update(1)
+            # Build binary mask
+            try:
+                frame_id = view_meta["frame_id"]
+                mask_id = view_meta["mask_id"]
+                seg_path = os.path.join(root, "scannetpp/data", seq, "output/mask", f"frame_{frame_id:06d}.png")
+                if not os.path.exists(seg_path):
+                    raise FileNotFoundError(seg_path)
+                segmentation = cv2.imread(seg_path, cv2.IMREAD_UNCHANGED)
+                binary_mask = (segmentation == mask_id).astype("uint8") * 255
 
-        # ------------------------------------------------------------------
-        # Caption pass 2 – Local (object-intrinsic)
-        # ------------------------------------------------------------------
-        local_caption = handler.caption_image(img, prompt=local_prompt, mask=mask_img)
-        bar.update(1)
+                img_w, img_h = img.size
+                mask_h, mask_w = binary_mask.shape
+                if (mask_w, mask_h) != (img_w, img_h):
+                    binary_mask = cv2.resize(binary_mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
 
-        # Store in object dictionary
-        best_view["global_caption"] = global_caption
-        best_view["local_caption"] = local_caption
+                mask_img = Image.fromarray(binary_mask)
 
-        # Build JSONL line
-        captions_jsonl.append(json.dumps({
-            "scene_id": seq,
-            "object_id": object_id,
-            "global": global_caption,
-            "local": local_caption,
-        }, ensure_ascii=False))
+                # ----------------------------------------------------------------------
+                # Debug: persist inputs (original image + binary mask) for inspection
+                # ----------------------------------------------------------------------
+                if save_debug:
+                    try:
+                        # File stem: obj<id>_view<idx>
+                        stem = f"obj{object_id}_view{view_idx}"
+                        img_save = os.path.join(dbg_dir_root, f"{stem}_img.png")
+                        mask_save = os.path.join(dbg_dir_root, f"{stem}_mask.png")
+
+                        # Only save if not already present to avoid unnecessary disk IO
+                        if not os.path.exists(img_save):
+                            img.save(img_save)
+                        if not os.path.exists(mask_save):
+                            mask_img.save(mask_save)
+                    except Exception as dbg_err:
+                        logging.debug(f"Failed to save debug inputs for object {object_id}, view {view_idx}: {dbg_err}")
+            except Exception as e:
+                logging.warning(f"Object {object_id}: failed to build mask - {e}")
+                bar.update(2)
+                continue
+
+            # ---- Caption passes ----
+            gcap = handler.caption_image(img, prompt=global_prompt, mask=mask_img)
+            bar.update(1)
+            lcap = handler.caption_image(img, prompt=local_prompt, mask=mask_img)
+            bar.update(1)
+
+            # Save into dict + lists
+            view_meta["global_caption"] = gcap
+            view_meta["local_caption"] = lcap
+            global_caps.append(gcap)
+            local_caps.append(lcap)
+
+        if global_caps or local_caps:
+            captions_jsonl.append(json.dumps({
+                "scene_id": seq,
+                "object_id": object_id,
+                "global": global_caps,
+                "local": local_caps,
+            }, ensure_ascii=False))
 
     bar.close()
 
@@ -444,13 +496,9 @@ def create_general_captions(root: str, seq: str, out_dir: str,
     # Convert captions to structured XML via Gemma LLM
     try:
         from vlm_caption.xml_structuring import jsonl_to_xml
-        from vlm_caption.embedding_fields import build_field_indices
 
         xml_path = os.path.join(out_dir, f"{seq}.xml")
         jsonl_to_xml(captions_path, xml_path, scene_id=seq, model=(merging_model_cfg or {}).get("xml_model", "gemma3:4b-it-qat"))
-
-        # Build per-field FAISS indices
-        build_field_indices(xml_path, out_dir)
 
         # Build unified FAISS index for retrieve & rerank pipeline (Phase 1)
         try:
@@ -517,6 +565,8 @@ def run_vlm_captioning(config_file: str = "vlm_caption/configs/caption.yaml"):
             original_model_cfg=o_cfg,
             highlighted_model_cfg=h_cfg,
             merging_model_cfg=m_cfg,
+            num_best_views=inference_cfg.get("num_best_views", 1),
+            save_debug=inference_cfg.get("debug", False),
         )
         if ok:
             success += 1

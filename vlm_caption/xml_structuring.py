@@ -12,6 +12,7 @@ FIELDS = [
     "name",          # name of the object
     "role",          # role & function within the scene
     "spatial",       # spatial relationships / position
+    "location",      # coarse/high-level location in the scene environment
     "interaction",   # interaction with nearby items
     "environment",   # environmental cues
     "scene_purpose", # inference about scene purpose
@@ -30,6 +31,7 @@ SCHEMA_DESC = (
     "- name - name of the object.\n"
     "- role - summarise the object's role in the scene.\n"
     "- spatial - describe its position and relationships.\n"
+    "- location - coarse/high-level cue about where the object is situated (e.g. indoors, outdoors, on the rug).\n"
     "- interaction - how it interacts/supports/blocks etc.\n"
     "- environment - lighting/background cues if relevant.\n"
     "- scene_purpose - what the object's presence implies about the scene.\n"
@@ -45,7 +47,12 @@ SCHEMA_DESC = (
 
 # quick presence check via substrings
 def _has_all_tags(text: str) -> bool:
-    return all(f"<{tag}>" in text and f"</{tag}>" in text for tag in FIELDS)
+    # Accept either explicit <tag>...</tag> pairs or self-closing <tag/> variants.
+    for tag in FIELDS:
+        pattern = rf"<{tag}\b[^>]*>(.*?)</{tag}>|<{tag}\b[^>]*/>"
+        if not re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL):
+            return False
+    return True
 
 def _prompt_for_object(obj_id: int, global_cap: str, local_cap: str) -> List[dict]:
     sys_msg = (
@@ -61,6 +68,51 @@ def _prompt_for_object(obj_id: int, global_cap: str, local_cap: str) -> List[dic
         {"role": "user", "content": user_msg},
     ]
 
+def _clean_response(text: str) -> str:
+    """Return *text* stripped from common LLM markdown decorations.
+
+    This removes leading/trailing back-tick fences (single, triple or ```xml) as
+    well as a possible leading "xml" language identifier. Surrounding
+    whitespace is trimmed.
+    """
+    # Trim surrounding whitespace
+    text = text.strip()
+
+    # Remove Markdown ``` fences
+    if text.startswith("```") and text.endswith("```"):
+        # ```xml ... ```  or ``` ... ```
+        text = text.split("```", 2)[1] if text.count("```") >= 2 else text
+        text = text.strip()
+
+    # Remove any leading/trailing back-ticks that may remain
+    text = text.lstrip("`\n ").rstrip("`\n ")
+
+    # Drop a leading language identifier
+    if text.lower().startswith("xml"):
+        text = text[3:].lstrip()
+
+    return text
+
+def _extract_object_snippets(text: str) -> List[str]:
+    """Return a list of <object>...</object> XML snippets found in *text*."""
+    pattern = re.compile(r"<object\b[^>]*>.*?</object>", re.IGNORECASE | re.DOTALL)
+    return pattern.findall(text)
+
+def _repair_tag_mismatches(text: str) -> str:
+    """
+    Repair mismatched opening and closing tags by replacing the closing tag with the correct one.
+    """
+    for tag in FIELDS:
+        # Find patterns where the closing tag is NOT the same as opening.
+        pattern = rf"(<{tag}\b[^>]*>)(.*?)</([a-zA-Z0-9_]+)>"
+        def _repl(match):
+            open_tag, content, close_tag = match.groups()
+            if close_tag.lower() != tag.lower():
+                return f"{open_tag}{content}</{tag}>"
+            return match.group(0)
+        text = re.sub(pattern, _repl, text, flags=re.IGNORECASE | re.DOTALL)
+    return text
+
 def _generate_snippet(model: str, obj_id: int, gcap: str, lcap: str, max_attempts: int = 3) -> str:
     for attempt in range(1, max_attempts + 1):
         try:
@@ -69,11 +121,36 @@ def _generate_snippet(model: str, obj_id: int, gcap: str, lcap: str, max_attempt
             text = resp.get("message", {}).get("content", "").strip()
             if not text:
                 raise ValueError("Empty response")
-            if text.startswith("```"):
-                text = text.strip("`\n").strip()
-            # Remove a leading markdown language identifier (e.g. "xml") that may remain
-            if text.lower().startswith("xml"):
-                text = text[3:].lstrip()
+
+            # Clean markdown / fencing decorations
+            text = _clean_response(text)
+
+            # Attempt to repair common mismatched closing tags
+            text = _repair_tag_mismatches(text)
+
+            snippets = _extract_object_snippets(text)
+            if snippets:
+                # Try to find the exact object id first
+                selected = None
+                for snip in snippets:
+                    m = re.search(r"id=\"?([^\">\s]+)\"?", snip)
+                    if m and m.group(1).strip().lower() == f"obj_{obj_id}".lower():
+                        selected = snip.strip()
+                        break
+                # Fallback to first snippet with all required tags
+                if selected is None:
+                    for snip in snippets:
+                        if _has_all_tags(snip):
+                            selected = snip.strip()
+                            break
+                # Fallback to very first snippet if still none
+                if selected is None:
+                    selected = snippets[0].strip()
+                text = selected
+
+            # Final whitespace trim to avoid stray chars before root element
+            text = text.strip()
+
             if not _has_all_tags(text):
                 logging.debug("Snippet missing tags:\n%s", text)
                 raise ValueError("Missing required tags")
@@ -86,6 +163,8 @@ def _generate_snippet(model: str, obj_id: int, gcap: str, lcap: str, max_attempt
             return text
         except Exception as e:
             logging.warning(f"Attempt {attempt}/{max_attempts} XML generation for object {obj_id} failed: {e}")
+            logging.warning(f"Ollama query parameters: {messages}")
+            logging.warning(f"Ollama response: {resp}")
             if attempt == max_attempts:
                 logging.error(f"Giving up on object {obj_id}; saving raw captions.")
                 # Fill fallback snippet with concatenated captions in <details>
@@ -93,7 +172,7 @@ def _generate_snippet(model: str, obj_id: int, gcap: str, lcap: str, max_attempt
                 safe_global = escape(gcap)
                 safe_local = escape(lcap)
                 fallback = [
-                    f"<{tag}>" + (safe_global if tag in ["role", "spatial", "interaction", "environment", "scene_purpose"] else safe_local) + f"</{tag}>"
+                    f"<{tag}>" + (safe_global if tag in ["role", "spatial", "location", "interaction", "environment", "scene_purpose"] else safe_local) + f"</{tag}>"
                     for tag in FIELDS
                 ]
                 return f"<object id=\"obj_{obj_id}\">" + "".join(fallback) + "</object>"
@@ -118,12 +197,27 @@ def jsonl_to_xml(jsonl_path: str, xml_out_path: str, scene_id: str, model: str =
             try:
                 j = json.loads(line)
                 obj_id = int(j["object_id"])
-                gcap = j.get("global", "")
-                lcap = j.get("local", "")
+                gcap_raw = j.get("global", "")
+                lcap_raw = j.get("local", "")
+
+                # Allow list-valued entries (multi-view). Convert to verbose text block.
+                if isinstance(gcap_raw, list):
+                    gcap = "\n".join(
+                        f"[GLOBAL view {idx + 1}] {c}" for idx, c in enumerate(gcap_raw)
+                    )
+                else:
+                    gcap = gcap_raw
+
+                if isinstance(lcap_raw, list):
+                    lcap = "\n".join(
+                        f"[LOCAL view {idx + 1}] {c}" for idx, c in enumerate(lcap_raw)
+                    )
+                else:
+                    lcap = lcap_raw
             except Exception as e:
                 logging.warning(f"Skipping malformed line: {e}")
                 continue
-            snippet = _generate_snippet(model, obj_id, gcap, lcap)
+            snippet = _generate_snippet(model, obj_id, gcap, lcap, max_attempts=5)
             objects.append(snippet)
 
     doc = f"<scene id=\"{scene_id}\">\n" + "\n".join(objects) + "\n</scene>\n"

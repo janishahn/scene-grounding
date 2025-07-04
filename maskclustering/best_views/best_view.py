@@ -90,8 +90,9 @@ def save_best_views(dataset, object_dict, args):
 
     # Track successful saves
     saved_count = 0
-    
-    # Process each object
+
+    num_views = int(getattr(args, "num_best_views", 1))
+
     for obj_id, obj_data in object_dict.items():
         # Skip if no representative masks
         if 'repre_mask_list' not in obj_data or len(obj_data['repre_mask_list']) == 0:
@@ -100,74 +101,76 @@ def save_best_views(dataset, object_dict, args):
             continue
             
         # NOTE: We currently rely on MaskClustering to provide us with the most representative view of the object
-        # Get best view info from first entry in repre_mask_list
-        frame_id, mask_id, coverage = obj_data['repre_mask_list'][0]
+        view_meta_list = []
 
-        try:
-            # Get RGB image
-            rgb = dataset.get_rgb(frame_id, change_color=False)
-            if rgb is None:
-                if debug:
-                    print(f"Could not load RGB image for object {obj_id}, frame {frame_id}")
-                continue
-            
-            # Generate base filename
-            base_filename = f'obj{obj_id:04d}_f{frame_id:04d}_m{mask_id:02d}'
-            
-            # Define all output paths
-            paths = {
-                'original': os.path.join(best_views_dir, f'{base_filename}.jpg'),
-                'highlighted': os.path.join(best_views_dir, f'{base_filename}_highlighted.jpg'),
-                'cropped': os.path.join(best_views_dir, f'{base_filename}_cropped.jpg'),
-                'cropped_highlighted': os.path.join(best_views_dir, f'{base_filename}_cropped_highlighted.jpg')
-            }
-            
-            # Initialize metadata with relative paths
-            metadata = {
-                'frame_id': frame_id,
-                'mask_id': mask_id,
-                'coverage': coverage
-            }
-            for key, path in paths.items():
-                metadata[f'{key}_path'] = os.path.relpath(path, scene_root)
-
-            # Save original version
-            cv2.imwrite(paths['original'], rgb)
-            
-            # Create and save highlighted version
+        # Iterate over top-N representative masks
+        for view_idx, (frame_id, mask_id, coverage) in enumerate(obj_data["repre_mask_list"][:num_views]):
             try:
-                mask, highlighted_rgb = create_highlighted_version(dataset, frame_id, mask_id, rgb.copy())
-                cv2.imwrite(paths['highlighted'], highlighted_rgb)
-                
-                # Handle cropped versions if enabled
-                if getattr(args, 'crop_best_views', False) or getattr(args, 'best_view_crop', False):
-                    bbox = calculate_padded_bounding_box(mask, padding_ratio=getattr(args, 'best_view_padding', 0.1))
-                    if bbox is not None:
-                        left, top, right, bottom = bbox
-                        # Save cropped original
-                        cropped_rgb = rgb[top:bottom+1, left:right+1]
-                        cv2.imwrite(paths['cropped'], cropped_rgb)
-                        
-                        # Save cropped highlighted
-                        cropped_highlighted = highlighted_rgb[top:bottom+1, left:right+1]
-                        cv2.imwrite(paths['cropped_highlighted'], cropped_highlighted)
-                        
-                        metadata['bbox'] = bbox
-                
-                saved_count += 1
-                if debug and saved_count % 10 == 0:
-                    print(f"Saved {saved_count} best view image sets so far")
-                    
+                rgb = dataset.get_rgb(frame_id, change_color=False)
+                if rgb is None:
+                    if debug:
+                        print(
+                            f"Could not load RGB image for object {obj_id}, frame {frame_id}")
+                    continue
+
+                base_filename = (
+                    f"obj{obj_id:04d}_v{view_idx}_f{frame_id:04d}_m{mask_id:02d}")
+
+                # All output paths for this view
+                paths = {
+                    "original": os.path.join(best_views_dir, f"{base_filename}.jpg"),
+                    "highlighted": os.path.join(
+                        best_views_dir, f"{base_filename}_highlighted.jpg"),
+                }
+
+                # Build metadata (relative paths)
+                metadata = {
+                    "frame_id": frame_id,
+                    "mask_id": mask_id,
+                    "coverage": coverage,
+                    "view_idx": view_idx,
+                }
+                for key, path in paths.items():
+                    metadata[f"{key}_path"] = os.path.relpath(path, scene_root)
+
+                # Write images to disk
+                cv2.imwrite(paths["original"], rgb)
+
+                # Highlighted versions
+                try:
+                    mask, highlighted_rgb = create_highlighted_version(
+                        dataset, frame_id, mask_id, rgb.copy())
+                    cv2.imwrite(paths["highlighted"], highlighted_rgb)
+
+                    if getattr(args, "crop_best_views", False) or getattr(
+                        args, "best_view_crop", False):
+                        bbox = calculate_padded_bounding_box(
+                            mask, padding_ratio=getattr(args, "best_view_padding", 0.1))
+                        if bbox is not None:
+                            left, top, right, bottom = bbox
+                            metadata["bbox"] = bbox
+
+                    saved_count += 1
+                    if debug and saved_count % 10 == 0:
+                        print(f"Saved {saved_count} best view image sets so far")
+
+                except Exception as e:
+                    print(
+                        f"Warning: Failed to process highlights for object {obj_id} view {view_idx}: {str(e)}")
+                    continue
+
+                # Append view metadata to list
+                view_meta_list.append(metadata)
+
             except Exception as e:
-                print(f"Warning: Failed to process highlights/crops for object {obj_id}: {str(e)}")
-                continue
-            
-            # Attach metadata to object_dict
-            object_dict[obj_id]['best_view'] = metadata
-            
-        except Exception as e:
-            print(f"ERROR processing object {obj_id}: {str(e)}")
-    
+                print(f"ERROR processing object {obj_id} view {view_idx}: {str(e)}")
+
+        # Attach aggregated metadata to object_dict
+        if view_meta_list:
+            object_dict[obj_id]["views"] = view_meta_list
+            # Backwards-compatibility shim
+            object_dict[obj_id]["best_view"] = view_meta_list[0]
+
     if debug:
         print(f"====> Completed save_best_views: saved {saved_count} out of {len(object_dict)} objects")
  

@@ -24,5 +24,6 @@ model:
 
 inference:
   output_dir: vlm_caption/outputs
-  debug: false
+  debug: true
   seq_names: []
+  num_best_views: 3

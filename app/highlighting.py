@@ -4,7 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 import os
 import logging
 
-def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_ids_to_highlight, output_path, search_radius=0.02):
+def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_probs, output_path, search_radius=0.02):
     """
     Create highlighted PLY mesh by mapping segmentation points to mesh vertices using nearest neighbors.
     
@@ -12,7 +12,7 @@ def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_ids_t
         ply_path: path to original PLY mesh
         segmentation_points: (N, 3) point cloud used for segmentation
         masks: (N, num_objects) boolean masks from prediction
-        object_ids_to_highlight: list of object IDs to highlight
+        object_probs: dictionary of object IDs to probabilities
         output_path: where to save highlighted mesh
         search_radius: radius in meters for finding nearby mesh vertices
     
@@ -20,7 +20,7 @@ def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_ids_t
         output_path if successful, None if failed
     """
 
-    if len(object_ids_to_highlight) < 0:
+    if not object_probs:
         logging.warning("No objects to highlight, skipping mesh processing.")
         return None
     
@@ -34,23 +34,23 @@ def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_ids_t
     # Build spatial index for mesh vertices
     nbrs = NearestNeighbors(radius=search_radius, algorithm='ball_tree').fit(mesh_vertices)
     
-    logging.info(f"Highlighting {len(object_ids_to_highlight)} objects")
+    logging.info(f"Highlighting {len(object_probs)} objects")
     
     # Step 1: Dim all existing colors to 30%
     colors = colors * 0.3
     
-    # Step 2: Define bright highlight colors
-    highlight_colors = [
-        [1.0, 0.0, 0.0],  # Bright Red
-        [0.0, 1.0, 0.0],  # Bright Green  
-        [0.0, 0.0, 1.0],  # Bright Blue
-        [1.0, 1.0, 0.0],  # Bright Yellow
-        [1.0, 0.0, 1.0],  # Bright Magenta
-        [0.0, 1.0, 1.0],  # Bright Cyan
-    ]
-    
-    # Step 3: Highlight each requested object
-    for i, obj_id in enumerate(object_ids_to_highlight):
+    # Step 2: Pre-compute min/max probabilities for color scaling (red→green)
+    probs = list(object_probs.values())
+    if not probs:
+        logging.warning("No probabilities provided – skipping highlight.")
+        return None
+
+    min_prob = min(probs)
+    max_prob = max(probs)
+    range_prob = max_prob - min_prob if max_prob != min_prob else 1.0
+
+    # Step 3: Highlight each requested object with a gradient colour
+    for obj_id, prob in object_probs.items():
         if obj_id >= masks.shape[1]:
             logging.warning(f"Object {obj_id} doesn't exist (max: {masks.shape[1]-1})")
             continue
@@ -80,7 +80,12 @@ def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_ids_t
         
         # Apply bright highlight color to matching mesh vertices
         if len(mesh_vertex_indices) > 0:
-            color = highlight_colors[i % len(highlight_colors)]
+            # Linear interpolation between red (low) and green (high)
+            if max_prob == min_prob:
+                t = 1.0  # Only one object – use green
+            else:
+                t = (prob - min_prob) / range_prob
+            color = [1.0 - t, t, 0.0]
             colors[mesh_vertex_indices] = color
     
     # Save the highlighted mesh
@@ -124,13 +129,13 @@ def load_scene_data(scene_id):
     
     return ply_path, segmentation_points, masks
 
-def create_highlighted_scene(scene_id, object_ids_to_highlight, output_dir="app/scans"):
+def create_highlighted_scene(scene_id, object_probs, output_dir="app/scans"):
     """
     Complete pipeline to create a highlighted scene.
     
     Args:
         scene_id: Scene identifier (e.g., "95d525fbfd")
-        object_ids_to_highlight: List of object IDs to highlight
+        object_probs: Dictionary of object IDs to probabilities
         output_dir: Directory to save results
     
     Returns:
@@ -144,7 +149,7 @@ def create_highlighted_scene(scene_id, object_ids_to_highlight, output_dir="app/
     ply_path, segmentation_points, masks = load_scene_data(scene_id)
     
     # Generate output filename
-    obj_str = "_".join(map(str, object_ids_to_highlight))
+    obj_str = "_".join(map(str, object_probs.keys()))
     output_filename = f"{scene_id}_highlighted_objects_{obj_str}.ply"
     output_path = os.path.join(output_dir, output_filename)
     
@@ -153,7 +158,7 @@ def create_highlighted_scene(scene_id, object_ids_to_highlight, output_dir="app/
         ply_path=ply_path,
         segmentation_points=segmentation_points,
         masks=masks,
-        object_ids_to_highlight=object_ids_to_highlight,
+        object_probs=object_probs,
         output_path=output_path,
         search_radius=0.02  # 2cm radius based on coordinate analysis
     )

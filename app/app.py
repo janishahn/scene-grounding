@@ -151,10 +151,11 @@ def find_object(user_query: str, mode: str):
             )
         objects = result.get('objects', [])
 
-        object_ids = [obj[0] for obj in objects]
+        # Build mapping of object IDs to probabilities (after score conversion)
+        object_probs = {obj[0]: _score_to_percent(obj[1], obj[2]) for obj in objects}
 
-        # Highlight in 3D
-        path_to_ply_file = create_highlighted_scene(scene_id=SCENE_ID, object_ids_to_highlight=object_ids)
+        # Highlight in 3D with probability-based color coding
+        path_to_ply_file = create_highlighted_scene(scene_id=SCENE_ID, object_probs=object_probs)
         final_path = convert_to_glb(path_to_ply_file)
 
         # Build gallery, explanations, and detailed HTML

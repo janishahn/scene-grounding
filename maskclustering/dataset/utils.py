@@ -3,23 +3,37 @@ import cv2
 import numpy as np
 
 
-def get_best_view(object_dict_dir, obj_id, dataset_root):
-    """Get best view image and metadata for an object.
-    
-    Args:
-        object_dict_dir: Directory containing object dictionary
-        obj_id: Object ID in the dataset
-        dataset_root: Root directory of the dataset
+def get_best_views(object_dict_dir: str, obj_id: int, dataset_root: str):
+    """Return a *list* of (rgb_image, metadata) tuples for the representative
+    views of ``obj_id``. Falls back to empty list if unavailable."""
 
-    Returns:
-        rgb_image: The best view RGB image
-        metadata: Dict with frame_id, mask_id, coverage, and bbox
-    """
-    obj_dict = np.load(os.path.join(object_dict_dir, 'object_dict.npy'), allow_pickle=True).item()
-    if obj_id not in obj_dict or 'best_view' not in obj_dict[obj_id]:
+    obj_dict_path = os.path.join(object_dict_dir, "object_dict.npy")
+    if not os.path.exists(obj_dict_path):
+        return []
+
+    obj_dict = np.load(obj_dict_path, allow_pickle=True).item()
+    entry = obj_dict.get(obj_id, {})
+
+    views = entry.get("views") or ([] if "best_view" not in entry else [entry["best_view"]])
+
+    out = []
+    for view in views:
+        rel_img_path = view.get("original_path")
+        if not rel_img_path:
+            continue
+        abs_path = os.path.join(os.path.dirname(dataset_root), rel_img_path)
+        if not os.path.exists(abs_path):
+            continue
+        rgb = cv2.imread(abs_path)
+        out.append((rgb, view))
+
+    return out
+
+
+def get_best_view(object_dict_dir, obj_id, dataset_root):
+    """Backward-compat wrapper, returns the *first* best view only."""
+
+    views = get_best_views(object_dict_dir, obj_id, dataset_root)
+    if not views:
         return None, None
-        
-    view_info = obj_dict[obj_id]['best_view']
-    rgb_image = cv2.imread(os.path.join(os.path.dirname(dataset_root), view_info['image_path']))
-    
-    return rgb_image, view_info
+    return views[0]

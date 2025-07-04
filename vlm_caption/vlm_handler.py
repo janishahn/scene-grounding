@@ -170,11 +170,10 @@ class VLMHandler:
                     mask,
                     prompt,
                     streaming=False,
-                    temperature=0.6,
-                    top_p=0.8,
+                    temperature=0.2,  # Default value taken from DAM repo
+                    top_p=0.5,  # Default value taken from DAM repo
                     num_beams=1,
-                    max_new_tokens=512,
-                    min_new_tokens=128,
+                    max_new_tokens=512
                 )
                 
                 if isinstance(res, str):

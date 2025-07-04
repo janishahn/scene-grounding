@@ -21,7 +21,8 @@ _TEMPLATE = (
     "Shape: {shape}. "
     "Materials: {materials}. "
     "Color: {color}. "
-    "Location: {spatial}."
+    "Spatial: {spatial}. "
+    "Location: {location}."
 )
 
 

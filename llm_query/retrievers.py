@@ -471,7 +471,8 @@ class EmbeddingRetriever(Retriever):
             "Shape: {shape}. "
             "Materials: {materials}. "
             "Color: {color}. "
-            "Location: {spatial}."
+            "Spatial: {spatial}. "
+            "Location: {location}."
         )
 
         docs: Dict[int, str] = {}

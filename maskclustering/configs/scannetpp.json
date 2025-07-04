@@ -9,5 +9,6 @@
     "step": 10,
     "save_best_views": true,
     "best_view_crop": true,
-    "best_view_padding": 0.2
+    "best_view_padding": 0.2,
+    "num_best_views": 3
 }
