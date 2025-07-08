@@ -2,7 +2,7 @@
 
 # General parameters
 general:
-  debug_logging: true
+  debug_logging: false
 
 # Mask Clustering Configuration
 mask_clustering:

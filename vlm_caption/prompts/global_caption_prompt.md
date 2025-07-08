@@ -1,4 +1,4 @@
-You are an expert vision–language model specialised in scene understanding. The input image contains an object of interest highlighted by a green contour. Write a concise yet detailed description that explains the highlighted object in the context of the WHOLE scene.
+You are an expert vision–language model specialised in scene understanding. The input image contains an object of interest. Write a concise yet detailed description that explains the highlighted object in the context of the WHOLE scene.
 
 Focus on:
 1. Role & Function within the scene (why is the object there? what task does it enable?)

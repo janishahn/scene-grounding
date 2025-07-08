@@ -1,9 +1,12 @@
 import logging
 import json
 import re
+import os
 from typing import List
 from xml.etree import ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from tqdm import tqdm
 import ollama
 
 __all__ = ["jsonl_to_xml"]
@@ -191,7 +194,14 @@ def jsonl_to_xml(jsonl_path: str, xml_out_path: str, scene_id: str, model: str =
     model
         Ollama model name.
     """
+    # Ensure concurrent generation is enabled
+    os.environ.setdefault("OLLAMA_NUM_PARALLEL", "4")
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     objects: List[str] = []
+    # Collect all jobs so we can run them in parallel
+    jobs = []  # (obj_id, gcap, lcap)
     with open(jsonl_path, "r", encoding="utf-8") as f:
         for line in f:
             try:
@@ -214,11 +224,42 @@ def jsonl_to_xml(jsonl_path: str, xml_out_path: str, scene_id: str, model: str =
                     )
                 else:
                     lcap = lcap_raw
+
+                jobs.append((obj_id, gcap, lcap))
             except Exception as e:
                 logging.warning(f"Skipping malformed line: {e}")
                 continue
-            snippet = _generate_snippet(model, obj_id, gcap, lcap, max_attempts=5)
-            objects.append(snippet)
+
+    # Number of parallel requests
+    max_workers = 4
+
+    # Run snippet generation concurrently
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_to_id = {
+            pool.submit(_generate_snippet, model, oid, gcap, lcap, 5): oid
+            for oid, gcap, lcap in jobs
+        }
+        for future in tqdm(
+            as_completed(future_to_id), total=len(jobs), desc="Structuring objects"
+        ):
+            oid = future_to_id[future]
+            try:
+                results[oid] = future.result()
+            except Exception as exc:
+                logging.error(f"Object {oid} generation failed: {exc}")
+
+    # Reconstruct objects list in the original order
+    objects = [results[oid] for oid, _, _ in jobs if oid in results]
+
+    n_ok = len(objects)
+    n_err = len(jobs) - n_ok
+    summary_msg = f"Converted {n_ok}/{len(jobs)} objects"
+    if n_err > 0:
+        summary_msg += f" ({n_err} errors)."
+    else:
+        summary_msg += "."
+    logging.info(summary_msg)
 
     doc = f"<scene id=\"{scene_id}\">\n" + "\n".join(objects) + "\n</scene>\n"
     with open(xml_out_path, "w", encoding="utf-8") as f:

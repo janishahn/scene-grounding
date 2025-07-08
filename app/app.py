@@ -32,6 +32,13 @@ def initialization():
             logging.StreamHandler()
         ]
     )
+    logging.info("Deleting old highlighted scenes...")
+    # delete all highlighted scenes from past runs
+    for filename in os.listdir(SCAN_DIR):
+        if filename != "95d525fbfd.glb" and filename != "95d525fbfd.ply":
+            os.remove(os.path.join(SCAN_DIR, filename))
+    
+    # Log the initialization
     logging.info("Initializing 3D Scene Object Highlighting Gradio App")
     logging.info(f"Using SCENE_ID: {SCENE_ID}")
     # Convert the original PLY to GLB so that orientation is corrected
