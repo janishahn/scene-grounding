@@ -230,9 +230,16 @@ def read_pridiction_npz(path):
     num_instance = len(pred['pred_score'])
     mask = torch.from_numpy(pred['pred_masks']).cuda()
     for i in range(num_instance):
+        # Handle both 'pred_classes' and 'label_id' keys for compatibility
+        if 'pred_classes' in pred:
+            label_id = pred['pred_classes'][i]
+        elif 'label_id' in pred:
+            label_id = pred['label_id'][i]
+        else:
+            raise KeyError("NPZ file must contain either 'pred_classes' or 'label_id' key")
         pred_info[path.split('/')[-1] + '_' +str(i)] = { # unique id of instance in all scenes
             'mask': mask[:, i].cpu().numpy(),
-            'label_id': pred['pred_classes'][i],
+            'label_id': label_id,
             'conf': pred['pred_score'][i]
         }
     return pred_info
@@ -255,14 +262,27 @@ def assign_instances_for_scan(pred_file, gt_file):
     '''
         if intersection > 0, then the prediction is considered a match
     '''
+    print(f"\n🔍 DEBUG: Processing files:")
+    print(f"   Prediction: {pred_file}")
+    print(f"   Ground truth: {gt_file}")
+    
     pred_info = read_pridiction_npz(os.path.join(pred_file))
+    print(f"   Loaded {len(pred_info)} predictions")
+    
     gt_ids = np.loadtxt(gt_file)
+    print(f"   GT shape: {gt_ids.shape}")
+    print(f"   GT unique values: {len(np.unique(gt_ids))}")
+    print(f"   GT value range: {gt_ids.min()} to {gt_ids.max()}")
     
     if opt.no_class:
         gt_ids = gt_ids % 1000 + VALID_CLASS_IDS[0] * 1000
 
     # get gt instances
     gt_instances = get_instances(gt_ids, VALID_CLASS_IDS, CLASS_LABELS, ID_TO_LABEL)
+    print(f"   GT instances by class: {[(k, len(v)) for k, v in gt_instances.items()]}")
+    total_gt_instances = sum(len(v) for v in gt_instances.values())
+    print(f"   Total GT instances: {total_gt_instances}")
+    
     # associate
     gt2pred = deepcopy(gt_instances)
     for label in gt2pred:
@@ -274,19 +294,33 @@ def assign_instances_for_scan(pred_file, gt_file):
     num_pred_instances = 0
     # mask of void labels in the groundtruth
     bool_void = np.logical_not(np.in1d(gt_ids//1000, VALID_CLASS_IDS))
+    print(f"   Void points: {np.sum(bool_void)} / {len(bool_void)}")
 
     gt_tensor_dict = get_gt_tensor(gt_ids, gt_instances)
 
     # go thru all prediction masks
+    valid_predictions = 0
+    skipped_unknown_label = 0
+    skipped_small_region = 0
+    
     for pred_mask_file in (pred_info):
         if opt.no_class:
             label_id = VALID_CLASS_IDS[0]
         else:
             label_id = int(pred_info[pred_mask_file]['label_id'])
         conf = pred_info[pred_mask_file]['conf']
+        
+        print(f"   Processing pred {num_pred_instances}: label_id={label_id}, conf={conf:.3f}")
+        
         if not label_id in ID_TO_LABEL:
+            print(f"     ❌ Unknown label_id {label_id} (not in ID_TO_LABEL)")
+            print(f"     Available IDs: {list(ID_TO_LABEL.keys())[:10]}...") # Show first 10
+            skipped_unknown_label += 1
             continue
+            
         label_name = ID_TO_LABEL[label_id]
+        print(f"     ✅ Mapped to class: '{label_name}'")
+        
         # read the mask
         pred_mask = pred_info[pred_mask_file]['mask']
 
@@ -297,8 +331,15 @@ def assign_instances_for_scan(pred_file, gt_file):
         # convert to binary
         pred_mask = np.not_equal(pred_mask, 0)
         num = np.count_nonzero(pred_mask)
+        print(f"     Mask points: {num}")
+        
         if num < opt.min_region_sizes[0]:
+            print(f"     ❌ Region too small ({num} < {opt.min_region_sizes[0]})")
+            skipped_small_region += 1
             continue  # skip if empty
+
+        print(f"     ✅ Valid prediction")
+        valid_predictions += 1
 
         pred_instance = {}
         pred_instance['filename'] = pred_mask_file
@@ -310,22 +351,34 @@ def assign_instances_for_scan(pred_file, gt_file):
 
         # matched gt instances
         matched_gt = []
-        gt_tensor = gt_tensor_dict[label_name]
-        intersection = torch.sum(gt_tensor & torch.from_numpy(pred_mask).cuda().reshape(-1, 1), dim=0)
-        intersect_ids = torch.nonzero(intersection).cpu().numpy().reshape(-1)
-        for gt_id in intersect_ids:
-            gt_copy = gt_instances[label_name][gt_id].copy()
-            pred_copy = pred_instance.copy()
-            intersection_num = intersection[gt_id].item()
-            gt_copy['intersection']   = intersection_num
-            pred_copy['intersection'] = intersection_num
-            matched_gt.append(gt_copy)
-            gt2pred[label_name][gt_id]['matched_pred'].append(pred_copy)
+        if label_name in gt_tensor_dict:
+            gt_tensor = gt_tensor_dict[label_name]
+            intersection = torch.sum(gt_tensor & torch.from_numpy(pred_mask).cuda().reshape(-1, 1), dim=0)
+            intersect_ids = torch.nonzero(intersection).cpu().numpy().reshape(-1)
+            print(f"     GT intersections: {len(intersect_ids)}")
+            
+            for gt_id in intersect_ids:
+                gt_copy = gt_instances[label_name][gt_id].copy()
+                pred_copy = pred_instance.copy()
+                intersection_num = intersection[gt_id].item()
+                gt_copy['intersection']   = intersection_num
+                pred_copy['intersection'] = intersection_num
+                matched_gt.append(gt_copy)
+                gt2pred[label_name][gt_id]['matched_pred'].append(pred_copy)
+        else:
+            print(f"     ⚠️  No GT instances for class '{label_name}'")
         
         pred_instance['matched_gt'] = matched_gt
         num_pred_instances += 1
         pred2gt[label_name].append(pred_instance)
 
+    print(f"\n📊 Summary:")
+    print(f"   Total predictions processed: {len(pred_info)}")
+    print(f"   Valid predictions: {valid_predictions}")
+    print(f"   Skipped (unknown label): {skipped_unknown_label}")
+    print(f"   Skipped (small region): {skipped_small_region}")
+    print(f"   Final pred2gt counts: {[(k, len(v)) for k, v in pred2gt.items() if len(v) > 0]}")
+    
     return gt2pred, pred2gt
 
 def print_results(avgs):

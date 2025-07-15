@@ -1,0 +1,1 @@
+import numpy as np; data = np.load('/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_vlm_caption/95d525fbfd.npz'); print('Keys:', list(data.keys())); print('Shapes:', {k: data[k].shape for k in data.keys()}); print('Label IDs:', np.unique(data['label_id'])); print('Score range:', data['pred_score'].min(), 'to', data['pred_score'].max())

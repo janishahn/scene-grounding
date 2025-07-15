@@ -288,8 +288,8 @@ class OllamaLLMRetriever(Retriever):
           ... up to 5 entries ...
         </objects>
 
-        • The <objects> block may be empty if none of the scene objects match the USER QUERY well enough.
-        • Confidence must be an integer between 0 and 100 (higher = better match).
+        - The <objects> block may be empty if none of the scene objects match the USER QUERY well enough.
+        - Confidence must be an integer between 0 and 100 (higher = better match).
         """
 
         return (

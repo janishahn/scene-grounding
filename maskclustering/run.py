@@ -68,7 +68,7 @@ def main(args):
         gt = 'data/scannet/gt'
     elif dataset == 'scannetpp':
         root = 'data/scannetpp/data'
-        image_path_pattern = 'iphone/rgb/*0.jpg'
+        image_path_pattern = 'iphone/rgb/*0.jpg' # stride = 10
         gt = 'data/scannetpp/gt'
     elif dataset == 'matterport3d':
         root = 'data/matterport3d/scans'
@@ -78,6 +78,8 @@ def main(args):
     t0 = time.time()
     seq_name_list = get_seq_name_list(dataset)
     print('There are %d scenes' % len(seq_name_list))
+    # NOTE: Added for convenience 
+    debug_flag = '--debug' if args.debug else ''
     
     # Step 1: use Cropformer to get 2D instance masks for all sequences.
     if "1" in steps_to_run:
@@ -85,8 +87,6 @@ def main(args):
 
     # # Step 2: Mask clustering using our proposed method.
     if "2" in steps_to_run:
-        # NOTE: Added for convenience 
-        debug_flag = '--debug' if args.debug else ''
         parallel_compute(f'python main.py --config {config} --seq_name_list %s {debug_flag}', 'mask clustering', 'cuda', CUDA_LIST, seq_name_list)
 
     # Step 3: Evaluate the class-agnostic results.
