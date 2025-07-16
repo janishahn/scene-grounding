@@ -5,20 +5,8 @@ import open_clip
 from open_clip import tokenizer
 import os
 import argparse
-import sys
 import json
 
-# --- Add this block to fix the import path ---
-# Get the absolute path of the project's root directory
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-# Add the project root to the Python path
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-# --- End of block ---
-
-# Add the maskclustering path to import constants
-# sys.path.append('/home/vlm_search/scene-grounding/maskclustering')
-from maskclustering.evaluation.constants import SCANNETPP_LABELS, SCANNETPP_IDS
 
 def rle_encode(mask):
     """Encode RLE (Run-length-encode) from 1D binary mask.
@@ -64,23 +52,6 @@ def load_clip():
     model.eval()
     print(f'[INFO] finish loading CLIP model...')
     return model
-
-def create_label_mappings():
-    """Create mappings between class names and IDs for ScanNet++."""
-    label_to_id = {}
-    id_to_label = {}
-    
-    # Create mapping from SCANNETPP_LABELS to SCANNETPP_IDS
-    for i in range(min(len(SCANNETPP_IDS), len(SCANNETPP_LABELS))):
-        class_id = SCANNETPP_IDS[i]
-        class_label = SCANNETPP_LABELS[i]
-        label_to_id[class_label] = class_id
-        id_to_label[class_id] = class_label
-    
-    print(f"📋 Created mappings for {len(label_to_id)} classes")
-    print(f"   Class ID range: {min(SCANNETPP_IDS)} to {max(SCANNETPP_IDS)}")
-    
-    return label_to_id, id_to_label
 
 def extract_object_names_from_xml(xml_path):
     """Extract object names from XML file in the same order as masks."""
@@ -142,7 +113,7 @@ def find_best_semantic_matches(object_embeddings, valid_class_embeddings,
             label_id = label_to_id[best_class]
         else:
             # Fallback to 'object' class (ID 15 in SCANNETPP_IDS[15])
-            label_id = SCANNETPP_IDS[15]  # This should be 'object'
+            label_id = label_to_id[12]  # This should be 'object'
         
         results.append({
             'object_name': obj_name,
@@ -211,39 +182,46 @@ def save_predictions_for_evaluation(scene_id, output_dir, pred_masks, label_ids,
     print(f"   - Main prediction file: {prediction_file_path}")
     print(f"   - Masks saved in: {masks_dir}")
 
-def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, output_dir, device='cuda'):
+def load_semantic_classes(semantic_classes_path):
+    """Load instance classes from a text file."""
+    with open(semantic_classes_path) as f:
+        class_names = [line.strip() for line in f if line.strip()]
+    label_to_id = {name: idx for idx, name in enumerate(class_names)}
+    id_to_label = {idx: name for idx, name in enumerate(class_names)}
+    return class_names, label_to_id, id_to_label
+
+def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, output_dir, semantic_classes_path, device='cuda'):
     """
     Convert XML object names to semantic predictions using CLIP similarity.
-    Saves results in the format required for the official evaluation script.
+    Uses instance_classes.txt for valid classes.
     """
-    
     print(f"🚀 Converting XML to semantic predictions")
     print(f"   XML: {xml_path}")
     print(f"   Input NPZ: {class_agnostic_npz_path}")
     print(f"   Output Dir: {output_dir}")
+    print(f"   Instance Classes: {semantic_classes_path}")
     print("=" * 80)
-    
-    # Create label mappings
-    label_to_id, id_to_label = create_label_mappings()
-    
-    # Load CLIP model exactly like maskclustering
+
+    # Load instance classes
+    valid_classes, label_to_id, id_to_label = load_semantic_classes(semantic_classes_path)
+
+    # Load CLIP model
     model = load_clip()
-    
+
     # Extract object names from XML
     print("📄 Extracting object names from XML...")
     object_names, object_ids = extract_object_names_from_xml(xml_path)
-    
-    # Load existing class-agnostic predictions
+
+    # Load class-agnostic predictions
     print("📥 Loading class-agnostic predictions...")
     class_agnostic_data = np.load(class_agnostic_npz_path)
     pred_masks = class_agnostic_data['pred_masks']
-    
+
     print(f"   Masks shape: {pred_masks.shape}")
-    
+
     # Verify dimensions match
     num_instances_masks = pred_masks.shape[1]
     num_instances_xml = len(object_names)
-    
     if num_instances_masks != num_instances_xml:
         print(f"⚠️  WARNING: Mask count ({num_instances_masks}) != XML object count ({num_instances_xml})")
         raise ValueError(
@@ -251,52 +229,44 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
         )
     else:
         print(f"✅ Dimensions match: {num_instances_masks} instances")
-    
-    # Extract text features for object names using maskclustering's method
+
+    # Extract text features for object names
     print("🧠 Extracting CLIP text features for object names...")
     object_embeddings = extract_text_features_batched(model, object_names, batch_size=32)
     print(f"   Object embeddings shape: {object_embeddings.shape}")
-    
-    # Extract text features for ScanNet++ class labels using maskclustering's method
-    print("🧠 Extracting CLIP text features for ScanNet++ class labels...")
-    valid_class_embeddings = extract_text_features_batched(model, SCANNETPP_LABELS, batch_size=32)
+
+    # Extract text features for instance class labels
+    print("🧠 Extracting CLIP text features for instance class labels...")
+    valid_class_embeddings = extract_text_features_batched(model, valid_classes, batch_size=32)
     print(f"   Class embeddings shape: {valid_class_embeddings.shape}")
-    
+
     # Find best matches
     print("🎯 Finding best semantic matches...")
     matches = find_best_semantic_matches(
-        object_embeddings, 
-        valid_class_embeddings, 
-        object_names, 
-        SCANNETPP_LABELS, 
+        object_embeddings,
+        valid_class_embeddings,
+        object_names,
+        valid_classes,
         label_to_id,
     )
-    
+
     # Extract label IDs and similarity scores
     label_ids = [match['label_id'] for match in matches]
-    similarity_scores = [match['similarity'] for match in matches]  # Use CLIP similarities as scores
-    
+    similarity_scores = [match['similarity'] for match in matches]
+
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Save predictions in the evaluation format
     scene_id = os.path.splitext(os.path.basename(xml_path))[0]
     save_predictions_for_evaluation(
         scene_id,
-        output_dir, # Pass the explicit output directory
+        output_dir,
         pred_masks,
         label_ids,
         similarity_scores
     )
-    
-    # The original np.savez can be removed or commented out
-    # np.savez(output_path,
-    #          pred_masks=pred_masks,
-    #          pred_score=np.array(similarity_scores, dtype=np.float32),
-    #          label_id=np.array(label_ids, dtype=np.int32))
-    
-    print(f"\n💾 Semantic predictions for scene {os.path.splitext(os.path.basename(xml_path))[0]} processed.")
-    
+
     # Print statistics
     unique_labels, counts = np.unique(label_ids, return_counts=True)
     print(f"\n📊 Label distribution:")
@@ -306,15 +276,13 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
             print(f"   {class_name} ({label}): {count}")
         else:
             print(f"   UNKNOWN_ID ({label}): {count}")
-    
-    # Print similarity statistics
+
     print(f"\n📈 CLIP Similarity Score Statistics (our confidence scores):")
     print(f"   Mean: {np.mean(similarity_scores):.3f}")
     print(f"   Min: {np.min(similarity_scores):.3f}")
     print(f"   Max: {np.max(similarity_scores):.3f}")
     print(f"   Std: {np.std(similarity_scores):.3f}")
-    
-    # Show distribution of confidence levels
+
     high_conf = np.sum(np.array(similarity_scores) >= 0.5)
     med_conf = np.sum((np.array(similarity_scores) >= 0.3) & (np.array(similarity_scores) < 0.5))
     low_conf = np.sum(np.array(similarity_scores) < 0.3)
@@ -322,38 +290,81 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
     print(f"   High confidence (≥0.5): {high_conf} ({100*high_conf/len(similarity_scores):.1f}%)")
     print(f"   Medium confidence (0.3-0.5): {med_conf} ({100*med_conf/len(similarity_scores):.1f}%)")
     print(f"   Low confidence (<0.3): {low_conf} ({100*low_conf/len(similarity_scores):.1f}%)")
-    
+
     return matches
 
 def main():
     parser = argparse.ArgumentParser(description='Convert XML predictions to semantic format using CLIP')
-    parser.add_argument('--scene_id', default='95d525fbfd', help='Scene ID to process')
-    parser.add_argument('--xml_path', help='Path to XML file (if not provided, uses scene_id)')
-    parser.add_argument('--class_agnostic_path', help='Path to class-agnostic .npz file (if not provided, uses scene_id)')
+    parser.add_argument('--scene_id', help='Single scene ID to process (alternative to --scene_list)')
+    parser.add_argument('--scene_list', default="/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/splits/scene_grounding.txt", help='Path to text file containing scene IDs (one per line)')
+    parser.add_argument('--xml_path', help='Path to XML file (only used with --scene_id)')
+    parser.add_argument('--class_agnostic_path', help='Path to class-agnostic .npz file (only used with --scene_id)')
     parser.add_argument('--output_dir', help='Path to save the prediction files for evaluation (if not provided, uses a default)')
-    
+    parser.add_argument('--semantic_classes_path', help='Path to instance_classes.txt')
+
     args = parser.parse_args()
-    
-    # Set default paths based on scene_id if not provided
-    if not args.xml_path:
-        args.xml_path = f"/home/vlm_search/scene-grounding/vlm_caption/outputs/{args.scene_id}.xml"
-    
-    if not args.class_agnostic_path:
-        args.class_agnostic_path = f"/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_class_agnostic/{args.scene_id}.npz"
-    
+
+    # Check that either scene_id or scene_list is provided, but not both
+    if args.scene_id and args.scene_list:
+        raise ValueError("Please provide either --scene_id or --scene_list, not both")
+    if not args.scene_id and not args.scene_list:
+        raise ValueError("Please provide either --scene_id or --scene_list")
+
+    # Set default output directory
     if not args.output_dir:
         args.output_dir = f"/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_vlm_caption/"
+
+    if not args.semantic_classes_path:
+        args.semantic_classes_path = f"/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_classes.txt"
+
+    # Get list of scene IDs to process
+    if args.scene_list:
+        print(f"📋 Reading scene IDs from: {args.scene_list}")
+        with open(args.scene_list, 'r') as f:
+            scene_ids = [line.strip() for line in f if line.strip()]
+        print(f"📊 Found {len(scene_ids)} scenes to process")
+    else:
+        scene_ids = [args.scene_id]
+        print(f"🎬 Processing single scene: {args.scene_id}")
+
+    # Process each scene
+    successful_conversions = 0
+    failed_conversions = 0
     
-    # Convert predictions
-    print(f"🎬 Starting conversion for scene: {args.scene_id}")
-    matches = convert_xml_to_semantic_predictions(
-        args.xml_path,
-        args.class_agnostic_path,
-        args.output_dir
-    )
-    
-    print("\n🎉 Conversion completed successfully!")
-    print(f"📁 Output saved to: {args.output_dir}")
+    for i, scene_id in enumerate(scene_ids):
+        print(f"\n{'='*80}")
+        print(f"🎬 Processing scene {i+1}/{len(scene_ids)}: {scene_id}")
+        print(f"{'='*80}")
+        
+        try:
+            # Set paths for this scene
+            xml_path = args.xml_path if args.xml_path else f"/home/vlm_search/scene-grounding/vlm_caption/outputs/{scene_id}.xml"
+            class_agnostic_path = args.class_agnostic_path if args.class_agnostic_path else f"/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_class_agnostic/{scene_id}.npz"
+            
+            # Convert predictions for this scene
+            matches = convert_xml_to_semantic_predictions(
+                xml_path,
+                class_agnostic_path,
+                args.output_dir,
+                args.semantic_classes_path
+            )
+            
+            print(f"✅ Successfully processed scene: {scene_id}")
+            successful_conversions += 1
+            
+        except Exception as e:
+            print(f"❌ Failed to process scene {scene_id}: {str(e)}")
+            failed_conversions += 1
+            continue
+
+    # Print final summary
+    print(f"\n{'='*80}")
+    print(f"🎉 Batch conversion completed!")
+    print(f"📊 Summary:")
+    print(f"   ✅ Successful: {successful_conversions}")
+    print(f"   ❌ Failed: {failed_conversions}")
+    print(f"   📁 Output saved to: {args.output_dir}")
+    print(f"{'='*80}")
 
 if __name__ == "__main__":
     main()
