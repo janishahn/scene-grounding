@@ -90,13 +90,18 @@ def highlight_objects_in_mesh(ply_path, segmentation_points, masks, object_probs
     
     # Save the highlighted mesh
     mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
-    success = o3d.io.write_triangle_mesh(output_path, mesh)
-    
-    if success:
-        logging.info(f"Successfully saved highlighted mesh to {output_path}")
-        return output_path
-    else:
-        logging.error(f"Failed to save mesh to {output_path}")
+
+    try:
+        success = o3d.io.write_triangle_mesh(output_path, mesh)
+        
+        if success:
+            logging.info(f"Successfully saved highlighted mesh to {output_path}")
+            return output_path
+        else:
+            logging.error(f"Failed to save mesh to {output_path}")
+            return None
+    except Exception as e:
+        logging.error(f"Failed to save mesh to {output_path}: {e}")
         return None
 
 def load_scene_data(scene_id):

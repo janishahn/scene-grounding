@@ -216,16 +216,34 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
     print("📥 Loading class-agnostic predictions...")
     class_agnostic_data = np.load(class_agnostic_npz_path)
     pred_masks = class_agnostic_data['pred_masks']
+    
+    # Extract confidence scores from class-agnostic predictions
+    if 'pred_score' in class_agnostic_data:
+        pred_confs = class_agnostic_data['pred_score']
+        print(f"   Using confidence scores from NPZ file (pred_score)")
+    else:
+        # Fallback to uniform confidence if not available
+        pred_confs = np.ones(pred_masks.shape[1])
+        print(f"   ⚠️  No confidence scores found in NPZ, using uniform confidence")
 
     print(f"   Masks shape: {pred_masks.shape}")
+    print(f"   Confidence scores shape: {pred_confs.shape}")
 
     # Verify dimensions match
     num_instances_masks = pred_masks.shape[1]
     num_instances_xml = len(object_names)
+    num_instances_confs = len(pred_confs)
+    
     if num_instances_masks != num_instances_xml:
         print(f"⚠️  WARNING: Mask count ({num_instances_masks}) != XML object count ({num_instances_xml})")
         raise ValueError(
             f"Mask count ({num_instances_masks}) does not match XML object count ({num_instances_xml})"
+        )
+    
+    if num_instances_masks != num_instances_confs:
+        print(f"⚠️  WARNING: Mask count ({num_instances_masks}) != Confidence count ({num_instances_confs})")
+        raise ValueError(
+            f"Mask count ({num_instances_masks}) does not match confidence count ({num_instances_confs})"
         )
     else:
         print(f"✅ Dimensions match: {num_instances_masks} instances")
@@ -240,7 +258,7 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
     valid_class_embeddings = extract_text_features_batched(model, valid_classes, batch_size=32)
     print(f"   Class embeddings shape: {valid_class_embeddings.shape}")
 
-    # Find best matches
+    # Find best matches (only for semantic labels, not confidence)
     print("🎯 Finding best semantic matches...")
     matches = find_best_semantic_matches(
         object_embeddings,
@@ -250,21 +268,22 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
         label_to_id,
     )
 
-    # Extract label IDs and similarity scores
+    # Extract label IDs from CLIP matching and confidence scores from NPZ
     label_ids = [match['label_id'] for match in matches]
-    similarity_scores = [match['similarity'] for match in matches]
+    similarity_scores = [match['similarity'] for match in matches]  # Keep for statistics
+    confidence_scores = pred_confs.tolist()  # Use NPZ confidence scores
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Save predictions in the evaluation format
+    # Save predictions in the evaluation format (using NPZ confidence scores)
     scene_id = os.path.splitext(os.path.basename(xml_path))[0]
     save_predictions_for_evaluation(
         scene_id,
         output_dir,
         pred_masks,
         label_ids,
-        similarity_scores
+        confidence_scores  # Use NPZ confidence instead of CLIP similarity
     )
 
     # Print statistics
@@ -277,26 +296,32 @@ def convert_xml_to_semantic_predictions(xml_path, class_agnostic_npz_path, outpu
         else:
             print(f"   UNKNOWN_ID ({label}): {count}")
 
-    print(f"\n📈 CLIP Similarity Score Statistics (our confidence scores):")
+    print(f"\n📈 CLIP Similarity Score Statistics (for semantic matching):")
     print(f"   Mean: {np.mean(similarity_scores):.3f}")
     print(f"   Min: {np.min(similarity_scores):.3f}")
     print(f"   Max: {np.max(similarity_scores):.3f}")
     print(f"   Std: {np.std(similarity_scores):.3f}")
 
-    high_conf = np.sum(np.array(similarity_scores) >= 0.5)
-    med_conf = np.sum((np.array(similarity_scores) >= 0.3) & (np.array(similarity_scores) < 0.5))
-    low_conf = np.sum(np.array(similarity_scores) < 0.3)
-    print(f"\n🎯 Confidence Distribution:")
-    print(f"   High confidence (≥0.5): {high_conf} ({100*high_conf/len(similarity_scores):.1f}%)")
-    print(f"   Medium confidence (0.3-0.5): {med_conf} ({100*med_conf/len(similarity_scores):.1f}%)")
-    print(f"   Low confidence (<0.3): {low_conf} ({100*low_conf/len(similarity_scores):.1f}%)")
+    print(f"\n🎯 NPZ Confidence Score Statistics (used as final confidence):")
+    print(f"   Mean: {np.mean(confidence_scores):.3f}")
+    print(f"   Min: {np.min(confidence_scores):.3f}")
+    print(f"   Max: {np.max(confidence_scores):.3f}")
+    print(f"   Std: {np.std(confidence_scores):.3f}")
+
+    high_conf = np.sum(np.array(confidence_scores) >= 0.5)
+    med_conf = np.sum((np.array(confidence_scores) >= 0.3) & (np.array(confidence_scores) < 0.5))
+    low_conf = np.sum(np.array(confidence_scores) < 0.3)
+    print(f"\n🎯 Final Confidence Distribution:")
+    print(f"   High confidence (≥0.5): {high_conf} ({100*high_conf/len(confidence_scores):.1f}%)")
+    print(f"   Medium confidence (0.3-0.5): {med_conf} ({100*med_conf/len(confidence_scores):.1f}%)")
+    print(f"   Low confidence (<0.3): {low_conf} ({100*low_conf/len(confidence_scores):.1f}%)")
 
     return matches
 
 def main():
     parser = argparse.ArgumentParser(description='Convert XML predictions to semantic format using CLIP')
     parser.add_argument('--scene_id', help='Single scene ID to process (alternative to --scene_list)')
-    parser.add_argument('--scene_list', default="/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/splits/scene_grounding.txt", help='Path to text file containing scene IDs (one per line)')
+    parser.add_argument('--scene_list', help='Path to text file containing scene IDs (one per line)', default="/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/splits/scene_grounding.txt")
     parser.add_argument('--xml_path', help='Path to XML file (only used with --scene_id)')
     parser.add_argument('--class_agnostic_path', help='Path to class-agnostic .npz file (only used with --scene_id)')
     parser.add_argument('--output_dir', help='Path to save the prediction files for evaluation (if not provided, uses a default)')
@@ -312,10 +337,10 @@ def main():
 
     # Set default output directory
     if not args.output_dir:
-        args.output_dir = f"/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_vlm_caption/"
+        args.output_dir = f"/home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_vlm_caption_top100/"
 
     if not args.semantic_classes_path:
-        args.semantic_classes_path = f"/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_classes.txt"
+        args.semantic_classes_path = f"/home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_benchmark/top100.txt"
 
     # Get list of scene IDs to process
     if args.scene_list:

@@ -11,4 +11,4 @@ data_root: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/
 
 # splits: [scene_grounding]
 
-scene_ids: [95d525fbfd]
+scene_ids: [3f15a9266d]

@@ -178,8 +178,15 @@ class OllamaLLMRetriever(Retriever):
             valid_objects.append((oid, conf_clamped))
 
         if not valid_objects:
-            logging.error("LLM returned no valid object ids - falling back to CE-only.")
-            return self._fallback_ce(scene_name, query, k, kwargs.get("data_dir", "vlm_caption/outputs"))
+            # The LLM concluded that no object in the scene satisfies the user query.
+            # Propagate this information upstream instead of silently falling back to
+            # a different retriever so that the frontend can inform the user.
+            logging.info("LLM returned an empty <objects> list – no suitable objects found.")
+            return {
+                "objects": [],
+                "reasoning": reasoning_text,
+                "retrieval_strategy": "llm_ollama",
+            }
 
         # Sort by confidence descending and keep top-k requested
         valid_objects.sort(key=lambda x: -x[1])
@@ -636,10 +643,13 @@ class OpenRouterLLMRetriever(Retriever):
             valid_objects.append((oid, conf_clamped))
 
         if not valid_objects:
-            logging.error("LLM returned no valid object ids - falling back to CE-only.")
-            return OllamaLLMRetriever._fallback_ce(
-                scene_name, query, k, kwargs.get("data_dir", "vlm_caption/outputs")
-            )
+            # The LLM concluded that no object in the scene satisfies the user query.
+            logging.info("LLM returned an empty <objects> list – no suitable objects found.")
+            return {
+                "objects": [],
+                "reasoning": reasoning_text,
+                "retrieval_strategy": "llm_openrouter",
+            }
 
         # Sort by confidence descending and keep top-k requested
         valid_objects.sort(key=lambda x: -x[1])

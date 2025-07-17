@@ -7,7 +7,7 @@ save_npy: false
 save_txt: true
 
 ## SEMANTIC
-save_semantic: false
+save_semantic: true
 sem_out_dir: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/semantic_gt
 
 ## INSTANCE
@@ -18,5 +18,5 @@ save_instance: true
 inst_gt_format: true
 inst_gtformat_out_dir: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/gt
 
-inst_preds_format: false
+inst_preds_format: true
 inst_predsformat_out_dir: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/preds_gt

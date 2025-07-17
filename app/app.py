@@ -5,7 +5,9 @@ import re
 import html
 
 from llm_query.query import query_scene
-from app.highlighting import create_highlighted_scene
+from app.highlighting import create_highlighted_scene, load_scene_data
+import numpy as np
+import open3d as o3d
 from app.convert import convert_to_glb
 from typing import List, Tuple
 from numpy import exp
@@ -56,6 +58,49 @@ def _score_to_percent(score: float, field: str) -> float:
     if field.startswith("llm_"):
         return score
     return _logit_to_prob(score)
+
+# -----------------------------------------------------------------------------
+# Full-scene segmentation utilities
+# -----------------------------------------------------------------------------
+
+def create_segmented_scene(scene_id: str) -> str:
+    """Create a GLB visualizing the full class-agnostic segmentation of *scene_id*."""
+    glb_path = os.path.join(SCAN_DIR, f"{scene_id}_segmented_scene.glb")
+    if os.path.exists(glb_path):
+        return glb_path
+
+    _, segmentation_points, masks = load_scene_data(scene_id)
+
+    labels = masks.argmax(axis=1) + 1
+    labels[~masks.any(axis=1)] = 0
+
+    rng = np.random.RandomState(0)
+    unique_labels = np.unique(labels)
+    label_to_color = {0: np.array([0.5, 0.5, 0.5])}
+    for lbl in unique_labels:
+        if lbl == 0:
+            continue
+        label_to_color[lbl] = rng.rand(3) * 0.7 + 0.3
+
+    colors = np.vstack([label_to_color[lbl] for lbl in labels])
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(segmentation_points)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+
+    ply_path = os.path.join(SCAN_DIR, f"{scene_id}_segmented_scene.ply")
+    o3d.io.write_point_cloud(ply_path, pcd)
+
+    return convert_to_glb(ply_path, glb_path)
+
+
+def show_segmented_scene():
+    try:
+        path = create_segmented_scene(SCENE_ID)
+        return gr.update(value=path, visible=True)
+    except Exception as e:
+        logging.warning(f"Failed to prepare segmented scene: {e}")
+        return gr.update(visible=False)
 
 def _find_best_view(scene_id: str, obj_id: int) -> str | None:
     """Return path to the best-view image for *obj_id* if available."""
@@ -124,7 +169,7 @@ def build_details_html(objects: List[Tuple[int, float, str, dict]]) -> str:
     return "\n".join(blocks)
 
 
-def find_object(user_query: str, mode: str):
+def find_object(user_query: str, mode: str, llm_model: str):
     """Return highlighted scene along with gallery and explanation table."""
     try:
         if mode == "LLM ranking (Ollama)":
@@ -142,7 +187,8 @@ def find_object(user_query: str, mode: str):
                 data_dir="vlm_caption/outputs",
                 k=5,
                 retrieval_strategy="llm_openrouter",
-                model_name="mistralai/mistral-small-3.2-24b-instruct:free"
+                model_name=llm_model
+                # model_name="deepseek/deepseek-chat:free"
                 # model_name="openrouter/cypher-alpha:free"
                 # model_name="google/gemma-3-27b-it:free"
             )
@@ -156,7 +202,19 @@ def find_object(user_query: str, mode: str):
                 ce_only=not use_fast,
                 retrieval_strategy="embedding" if use_fast else "ce_only",
             )
-        objects = result.get('objects', [])
+        objects = result.get("objects", [])
+
+        # --------------------------------------------------------------
+        # Handle the special case: LLM found no matching object.
+        # --------------------------------------------------------------
+        if not objects:
+            # Prefer explicit reasoning from the retriever, if provided.
+            no_match_reason = result.get("reasoning", "")
+            if not no_match_reason:
+                no_match_reason = "No objects in the scene match your description."
+
+            # Return the original scene (unhighlighted) and empty auxiliary outputs.
+            return SCENE_MODEL_PATH, [], [], no_match_reason, ""
 
         # Build mapping of object IDs to probabilities (after score conversion)
         object_probs = {obj[0]: _score_to_percent(obj[1], obj[2]) for obj in objects}
@@ -197,7 +255,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
         with gr.Column():
             text_input = gr.Textbox(
                 label="What object are you looking for?",
-                info="e.g., 'A place where I can wash my hands'",
                 placeholder="Type here and press Enter..."
             )
 
@@ -213,11 +270,23 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
                 value="LLM ranking (OpenRouter)",
             )
 
+        with gr.Column():
+            llm_model_dropdown = gr.Dropdown(
+                label="OpenRouter LLM model",
+                choices=[
+                    "mistralai/mistral-small-3.2-24b-instruct:free",
+                    "deepseek/deepseek-chat:free",
+                    "openrouter/cypher-alpha:free",
+                    "google/gemma-3-27b-it:free",
+                ],
+                value="mistralai/mistral-small-3.2-24b-instruct:free",
+            )
+
     with gr.Row():
         # The 3D Model component.
         with gr.Column():
             model_3d = gr.Model3D(
-                value=SCENE_MODEL_PATH,  # Initial model
+                value=SCENE_MODEL_PATH  # Initial model
             )
         # Gallery for object images
         with gr.Column():
@@ -250,11 +319,20 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
     # Collapsible full-object details (HTML <details> blocks)
     object_details = gr.HTML(label="Full Object Attributes")
 
+    with gr.Column():
+        show_segmented_button = gr.Button("Show Full Segmented Scene (MaskClustering)")
+        segmented_scene_model = gr.Model3D(visible=False)
+
     # Event listener for the textbox submission.
     text_input.submit(
         fn=find_object,
-        inputs=[text_input, ranking_mode],
+        inputs=[text_input, ranking_mode, llm_model_dropdown],
         outputs=[model_3d, image_gallery, explanation_table, reasoning_markdown, object_details]
+    )
+
+    show_segmented_button.click(
+        fn=show_segmented_scene,
+        outputs=segmented_scene_model
     )
 
 # Launch the Gradio app.

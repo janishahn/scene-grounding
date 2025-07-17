@@ -1,0 +1,21 @@
+# Scene list for evaluation
+scene_list_file: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/splits/scene_grounding.txt
+
+# --- Paths for Evaluation ---
+# Directory for the official ground truth files
+gt_dir: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/gt/
+
+# Directory containing your generated prediction files
+preds_dir: /home/vlm_search/scene-grounding/maskclustering/data/prediction/scannetpp_vlm_caption/
+
+# Root directory of the ScanNet++ data release
+data_root: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/data/
+
+# --- Class Definitions ---
+# File with all semantic classes
+semantic_classes_file: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/semantic_classes.txt
+# File with classes to be evaluated for instance segmentation
+instance_classes_file: /home/vlm_search/scene-grounding/maskclustering/data/scannetpp/metadata/instance_classes.txt
+
+# Optional: Verify prediction file format before running evaluation
+check_pred_files: true
