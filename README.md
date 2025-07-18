@@ -10,7 +10,7 @@ This project extends the MaskClustering pipeline for open-vocabulary 3D instance
 The core 3D instance segmentation and mask clustering is provided by the [MaskClustering](https://arxiv.org/abs/2401.07745) pipeline (CVPR 2024), which is used as a foundation with minor modifications.
 
 ## Pipeline Structure
-1. **3D Instance Segmentation**: MaskClustering merges 2D instance masks from RGB-D scans into 3D object instances using multi-view verification.
+1. **3D Instance Segmentation**: MaskClustering merges 2D instance masks from RGB-D scans into 3D object instances using multi-view verification based on their "view consensus rate".
 2. **Best-View Selection**: For each 3D object, the most informative 2D view is selected and highlighted.
 3. **Vision-Language Captioning**: VLMs generate detailed captions for both the highlighted object view and the original scene context.
 4. **Vector Retrieval**: Caption embeddings are pre-computed with the lightweight *BGE-base-en-v1.5* model and stored in a FAISS index. At query time the user query is embedded, the top-*k* (default 10) candidate objects are fetched, and **only those captions** are sent to the LLM.
